@@ -50,8 +50,9 @@ type Post struct {
 	Rendered string `json:"rendered,omitempty" gorm:"type:longtext"` // 渲染后的HTML
 
 	// 作者
-	UserID uint  `json:"user_id" gorm:"index;not null"`
-	Author *User `json:"author,omitempty" gorm:"foreignKey:UserID"`
+	UserID     uint   `json:"user_id" gorm:"index;not null"`
+	AuthorName string `json:"author_name" gorm:"type:varchar(100)"`
+	Author     *User  `json:"author,omitempty" gorm:"foreignKey:UserID"`
 
 	// 分类
 	CategoryID uint      `json:"category_id" gorm:"index"`
