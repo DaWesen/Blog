@@ -15,7 +15,7 @@ var (
 
 type Claims struct {
 	Name   string `json:"name"`
-	UserID string `json:"StudentID"`
+	UserID string `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
@@ -29,7 +29,7 @@ func GenerateAccessToken(name string) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
-			Issuer:    "md6",
+			Issuer:    "blog",
 			Subject:   "access",
 		},
 	}
@@ -104,7 +104,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set("username", claims.Name)
-		c.Set("UserID", claims.UserID)
+		c.Set("user_id", claims.UserID)
 		c.Next()
 	}
 }

@@ -11,6 +11,7 @@ type UserSQL interface {
 	InsertUser(ctx context.Context, u *model.User) error
 	GetUserByID(ctx context.Context, id uint) (*model.User, error)
 	GetUserByName(ctx context.Context, name string) (*model.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	UpdateUser(ctx context.Context, id uint, updates map[string]any) error
 	DeleteUser(ctx context.Context, id uint) error
 }
@@ -95,6 +96,11 @@ func (d *userSQL) GetUserByName(ctx context.Context, name string) (*model.User, 
 	return &u, err
 }
 
+func (d *userSQL) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	var u model.User
+	err := d.db.WithContext(ctx).Where("email = ?", email).First(&u).Error
+	return &u, err
+}
 func (d *userSQL) UpdateUser(ctx context.Context, id uint, updates map[string]any) error {
 	return d.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error
 }
