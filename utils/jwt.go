@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -149,4 +151,27 @@ func GetUserIDFromGin(c *gin.Context) (uint, error) {
 	default:
 		return 0, errors.New("无效的用户 ID 类型")
 	}
+}
+func GetCurrentUserIDFromContext(ctx context.Context) (uint, error) {
+	// 尝试从Gin上下文中获取（适用于HTTP请求）
+	if ginCtx, ok := ctx.Value("ginContext").(*gin.Context); ok {
+		userID, err := GetUserIDFromGin(ginCtx)
+		if err == nil {
+			return userID, nil
+		}
+	}
+
+	// 尝试从标准context中获取（适用于gRPC或其他场景）
+	if userID, ok := ctx.Value("user_id").(uint); ok {
+		return userID, nil
+	}
+
+	// 尝试从标准context中获取（字符串类型）
+	if userIDStr, ok := ctx.Value("user_id").(string); ok {
+		var userID uint
+		fmt.Sscanf(userIDStr, "%d", &userID)
+		return userID, nil
+	}
+
+	return 0, errors.New("用户未认证")
 }

@@ -189,10 +189,8 @@ func (s *categoryService) ListCategories(ctx context.Context, page, size int) ([
 		return nil, 0, err
 	}
 
-	// 获取总数（实际项目中可能需要单独的Count方法）
-	var total int64
-	// 这里简单返回，实际应该通过DAO获取准确数量
-
+	// 获取总数
+	total, err := s.categorySQL.CountCategories(ctx)
 	return categories, total, nil
 }
 

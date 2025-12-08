@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -144,33 +143,10 @@ func NewPostService(
 }
 
 // getCurrentUserIDFromContext 从上下文中获取当前用户ID
-func (s *postService) getCurrentUserIDFromContext(ctx context.Context) (uint, error) {
-	// 尝试从Gin上下文中获取（适用于HTTP请求）
-	if ginCtx, ok := ctx.Value("ginContext").(*gin.Context); ok {
-		userID, err := utils.GetUserIDFromGin(ginCtx)
-		if err == nil {
-			return userID, nil
-		}
-	}
-
-	// 尝试从标准context中获取（适用于gRPC或其他场景）
-	if userID, ok := ctx.Value("user_id").(uint); ok {
-		return userID, nil
-	}
-
-	// 尝试从标准context中获取（字符串类型）
-	if userIDStr, ok := ctx.Value("user_id").(string); ok {
-		var userID uint
-		fmt.Sscanf(userIDStr, "%d", &userID)
-		return userID, nil
-	}
-
-	return 0, ErrUnauthorized
-}
 
 // getCurrentUser 从上下文中获取当前用户完整信息
 func (s *postService) getCurrentUser(ctx context.Context) (*model.User, error) {
-	userID, err := s.getCurrentUserIDFromContext(ctx)
+	userID, err := utils.GetCurrentUserIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

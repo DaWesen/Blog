@@ -43,6 +43,7 @@ type CategorySQL interface {
 	UpdateCategory(ctx context.Context, id uint, updates map[string]any) error
 	DeleteCategory(ctx context.Context, id uint) error
 	FindCategories(ctx context.Context, condition interface{}, args ...interface{}) ([]*model.Category, error)
+	CountCategories(ctx context.Context) (int64, error)
 }
 
 // 标签
@@ -68,7 +69,11 @@ type LikeSQL interface {
 	DeleteLike(ctx context.Context, userID, postID uint) error
 	FindLikes(ctx context.Context, condition interface{}, args ...interface{}) ([]*model.UserLikePost, error)
 }
-
+type CommentLikeSQL interface {
+	CommentInsertLike(ctx context.Context, userID, commentID uint) error
+	CommentDeleteLike(ctx context.Context, userID, postID uint) error
+	CommentFindLikes(ctx context.Context, condition interface{}, args ...interface{}) ([]*model.CommentLike, error)
+}
 type StarSQL interface {
 	InsertStar(ctx context.Context, userID, postID uint) error
 	DeleteStar(ctx context.Context, userID, postID uint) error
@@ -207,6 +212,11 @@ func (d *categorySQL) FindCategories(ctx context.Context, condition interface{},
 	err := d.db.WithContext(ctx).Where(condition, args...).Find(&categories).Error
 	return categories, err
 }
+func (d *categorySQL) CountCategories(ctx context.Context) (int64, error) {
+	var count int64
+	err := d.db.WithContext(ctx).Model(&model.Category{}).Count(&count).Error
+	return count, err
+}
 
 // 标签
 type tagSQL struct{ db *gorm.DB }
@@ -313,4 +323,25 @@ func (d *starSQL) FindStars(ctx context.Context, condition interface{}, args ...
 	var stars []*model.UserStarPost
 	err := d.db.WithContext(ctx).Where(condition, args...).Find(&stars).Error
 	return stars, err
+}
+
+// 因为CommentService需要用到CommentLikeSQL，所以这里补充CommentLikeSQL的实现
+type commentLikeSQL struct{ db *gorm.DB }
+
+func NewCommentLikeSQL(db *gorm.DB) CommentLikeSQL { return &commentLikeSQL{db: db} }
+func (d *commentLikeSQL) CommentInsertLike(ctx context.Context, userID, commentID uint) error {
+	return d.db.WithContext(ctx).Create(&model.CommentLike{
+		UserID:    userID,
+		CommentID: commentID,
+	}).Error
+}
+func (d *commentLikeSQL) CommentDeleteLike(ctx context.Context, userID, postID uint) error {
+	return d.db.WithContext(ctx).
+		Where("user_id = ? AND comment_id = ?", userID, postID).
+		Delete(model.CommentLike{}).Error
+}
+func (d *commentLikeSQL) CommentFindLikes(ctx context.Context, condition interface{}, args ...interface{}) ([]*model.CommentLike, error) {
+	var likes []*model.CommentLike
+	err := d.db.WithContext(ctx).Where(condition, args...).Find(&likes).Error
+	return likes, err
 }
