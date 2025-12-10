@@ -23,6 +23,7 @@ type CommentSQL interface {
 	UpdateComment(ctx context.Context, id uint, updates map[string]any) error
 	DeleteComment(ctx context.Context, id uint) error
 	FindComments(ctx context.Context, condition interface{}, args ...interface{}) ([]*model.Comment, error)
+	CountComments(ctx context.Context) (int64, error)
 }
 
 // 帖子
@@ -141,6 +142,11 @@ func (d *commentSQL) FindComments(ctx context.Context, condition interface{}, ar
 	var comments []*model.Comment
 	err := d.db.WithContext(ctx).Where(condition, args...).Find(&comments).Error
 	return comments, err
+}
+func (d *commentSQL) CountComments(ctx context.Context) (int64, error) {
+	var count int64
+	err := d.db.WithContext(ctx).Model(&model.Comment{}).Count(&count).Error
+	return count, err
 }
 
 // 帖子

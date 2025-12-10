@@ -91,10 +91,10 @@ type Comment struct {
 	PostID uint `json:"post_id" gorm:"index;not null"`
 
 	// 关联关系
-	User    *User     `json:"user,omitempty" gorm:"foreignKey:UserID"`
-	Post    *Post     `json:"post,omitempty" gorm:"foreignKey:PostID"`
-	Parent  *Comment  `json:"parent,omitempty" gorm:"foreignKey:ParentID"`
-	Replies []Comment `json:"replies,omitempty" gorm:"foreignKey:ParentID"`
+	User    *User      `json:"user,omitempty" gorm:"foreignKey:UserID"`
+	Post    *Post      `json:"post,omitempty" gorm:"foreignKey:PostID"`
+	Parent  *Comment   `json:"parent,omitempty" gorm:"foreignKey:ParentID"`
+	Replies []*Comment `json:"replies,omitempty" gorm:"foreignKey:ParentID"`
 
 	// 时间
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`

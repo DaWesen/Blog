@@ -308,3 +308,73 @@ func (s *commentService) DeleteComment(ctx context.Context, id uint) error {
 
 	return err
 }
+func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, page, size int) ([]*model.Comment, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 10
+	}
+	offset := (page - 1) * size
+	//帖子是否存在
+	post, err := s.postSQL.GetPostByID(ctx, postID)
+	if err != nil {
+		return nil, 0, ErrPostIsDeleted
+	}
+	condition := "post_id=?AND parent_id is NULL AND status=`published`"
+	args := []interface{}{post.ID}
+	var total int64
+	err = s.db.WithContext(ctx).
+		Model(&model.Comment{}).
+		Where(condition, args...).
+		Count(&total).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("获取评论总数失败%w", err)
+	}
+	var comments []*model.Comment
+	err = s.db.WithContext(ctx).
+		Preload("User", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id,name,avatar_url")
+		}).
+		Where(condition, args...).
+		Order("created_at DESC").
+		Limit(size).
+		Offset(offset).
+		Find(&comments).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("获取评论列表失败，%w", err)
+	}
+	for _, comment := range comments {
+		// 获取该评论的直接回复（二级评论）
+		var replies []*model.Comment
+		err = s.db.WithContext(ctx).
+			Preload("User", func(db *gorm.DB) *gorm.DB {
+				return db.Select("id, name, avatar_url")
+			}).
+			Where("post_id = ? AND parent_id = ? AND status = 'published'", postID, comment.ID).
+			Order("created_at ASC"). // 回复按时间正序排列
+			Limit(3).                // 只获取前3条回复
+			Find(&replies).Error
+
+		if err == nil && len(replies) > 0 {
+			comment.Replies = replies
+		}
+
+		// 获取评论点赞数（从Redis缓存或数据库）
+		likeCount, err := s.commentCache.CountCommentLikes(ctx, comment.ID)
+		if err == nil {
+			comment.LikeCount = uint(likeCount)
+		} else {
+			// 如果Redis没有，从数据库获取
+			dbLikeCount, err := s.commentLikeSQL.CommentFindLikes(ctx, "comment_id = ?", comment.ID)
+			if err == nil {
+				comment.LikeCount = uint(len(dbLikeCount))
+			}
+		}
+	}
+
+	return comments, total, nil
+}
+func(s *commentService)ListCommentByUser(ctx context.Context,userID uint,page,size int)([]*model.Comment,int64,error){
+	if page <1
+}
