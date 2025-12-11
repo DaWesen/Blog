@@ -375,6 +375,157 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 
 	return comments, total, nil
 }
-func(s *commentService)ListCommentByUser(ctx context.Context,userID uint,page,size int)([]*model.Comment,int64,error){
-	if page <1
+func (s *commentService) ListCommentsByUser(ctx context.Context, userID uint, page, size int) ([]*model.Comment, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	offset := (page - 1) * size
+
+	// 获取用户评论总数
+	var total int64
+	err := s.db.WithContext(ctx).
+		Model(&model.Comment{}).
+		Where("user_id = ? AND status = 'published'", userID).
+		Count(&total).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("获取用户评论总数失败: %w", err)
+	}
+
+	// 获取用户评论列表
+	var comments []*model.Comment
+	err = s.db.WithContext(ctx).
+		Preload("User", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_url")
+		}).
+		Preload("Post", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, title, slug")
+		}).
+		Where("user_id = ? AND status = 'published'", userID).
+		Order("created_at DESC").
+		Limit(size).
+		Offset(offset).
+		Find(&comments).Error
+
+	if err != nil {
+		return nil, 0, fmt.Errorf("获取用户评论列表失败: %w", err)
+	}
+
+	return comments, total, nil
+}
+func (s *commentService) LikeComment(ctx context.Context, commentID uint) error {
+	// 1 获取当前用户
+	currentUser, err := s.getCurrentUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	//  检查评论是否存在
+	comment, err := s.getCommentWithUser(ctx, commentID)
+	if err != nil {
+		return ErrCommentNotFound
+	}
+
+	//  检查是否已经点赞过
+	isLiked, err := s.commentCache.IsCommentLiked(ctx, currentUser.ID, commentID)
+	if err != nil {
+		// Redis查询失败，从MySQL检查
+		likes, err := s.commentLikeSQL.CommentFindLikes(ctx, "user_id = ? AND comment_id = ?", currentUser.ID, commentID)
+		if err == nil && len(likes) > 0 {
+			return ErrCommentAlreadyLiked
+		}
+	} else if isLiked {
+		return ErrCommentAlreadyLiked
+	}
+
+	//  开启事务
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		//  保存到MySQL点赞表
+		if err := s.commentLikeSQL.CommentInsertLike(ctx, currentUser.ID, commentID); err != nil {
+			return fmt.Errorf("保存评论点赞记录失败: %w", err)
+		}
+
+		//  更新评论点赞数
+		updates := map[string]interface{}{
+			"like_count": comment.LikeCount + 1,
+			"updated_at": time.Now(),
+		}
+		if err := s.commentSQL.UpdateComment(ctx, commentID, updates); err != nil {
+			return fmt.Errorf("更新评论点赞数失败: %w", err)
+		}
+
+		// 保存到Redis缓存
+		if err := s.commentCache.LikeComment(ctx, currentUser.ID, commentID); err != nil {
+			fmt.Printf("Redis评论点赞缓存失败: %v\n", err)
+		}
+
+		return nil
+	})
+
+	return err
+}
+func (s *commentService) UnlikeComment(ctx context.Context, commentID uint) error {
+	//获取用户
+	currentuser, err := s.getCurrentUser(ctx)
+	if err != nil {
+		return err
+	}
+	comment, err := s.getCommentWithUser(ctx, commentID)
+	if err != nil {
+		return ErrCommentNotFound
+	}
+	//检查是否被点赞
+	isliked, err := s.commentCache.IsCommentLiked(ctx, currentuser.ID, commentID)
+	if err != nil {
+		likes, err := s.commentLikeSQL.CommentFindLikes(ctx, "user_id=?AND comment_id=?", currentuser.ID, commentID)
+		if err == nil || len(likes) > 0 {
+			return ErrCommentNotLiked
+		}
+	} else if !isliked {
+		return ErrCommentNotLiked
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		//  从MySQL删除点赞记录
+		if err := s.commentLikeSQL.CommentDeleteLike(ctx, currentuser.ID, commentID); err != nil {
+			return fmt.Errorf("删除评论点赞记录失败: %w", err)
+		}
+
+		//  更新评论点赞数
+		if comment.LikeCount > 0 {
+			updates := map[string]interface{}{
+				"like_count": comment.LikeCount - 1,
+				"updated_at": time.Now(),
+			}
+			if err := s.commentSQL.UpdateComment(ctx, commentID, updates); err != nil {
+				return fmt.Errorf("更新评论点赞数失败: %w", err)
+			}
+		}
+
+		//  从Redis缓存删除
+		if err := s.commentCache.UnlikeComment(ctx, currentuser.ID, commentID); err != nil {
+			fmt.Printf("Redis取消评论点赞缓存失败: %v\n", err)
+		}
+
+		return nil
+	})
+
+	return err
+}
+func (s *commentService) GetCommentLikes(ctx context.Context, commentID uint) (uint, error) {
+	//  尝试从Redis获取
+	count, err := s.commentCache.CountCommentLikes(ctx, commentID)
+	if err == nil && count > 0 {
+		return uint(count), nil
+	}
+
+	//  从MySQL获取
+	comment, err := s.commentSQL.GetCommentByID(ctx, commentID)
+	if err != nil {
+		return 0, ErrCommentNotFound
+	}
+
+	return comment.LikeCount, nil
 }
