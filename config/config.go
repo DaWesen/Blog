@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/spf13/viper"
 )
 
@@ -39,17 +42,35 @@ type JWTConfig struct {
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
-	viper.AddConfigPath("./config")
 
+	// 获取当前工作目录
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	// 添加多个可能的配置路径，包括config子目录
+	viper.AddConfigPath(cwd)                          // 当前目录
+	viper.AddConfigPath(filepath.Join(cwd, "config")) // config子目录
+	viper.AddConfigPath(".")                          // 当前目录（相对路径）
+	viper.AddConfigPath("./config")                   // config子目录（相对路径）
+	viper.AddConfigPath("config")                     // config子目录（相对路径）
+
+	// 设置默认值
 	viper.SetDefault("server.port", 8080)
+	viper.SetDefault("server.mode", "debug")
 	viper.SetDefault("server.grpc_port", 50051)
 	viper.SetDefault("redis.port", 6379)
 	viper.SetDefault("redis.db", 0)
 
+	// 尝试读取配置文件
 	if err := viper.ReadInConfig(); err != nil {
+		// 返回更详细的错误信息
 		return nil, err
 	}
+
+	// 读取环境变量（可选）
+	viper.AutomaticEnv()
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {

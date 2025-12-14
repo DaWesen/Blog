@@ -185,8 +185,6 @@ type PostTag struct {
 
 // AutoMigrate 自动迁移数据库表
 func AutoMigrate(db *gorm.DB) error {
-	// 设置数据库引擎和字符集（MySQL特定）
-	db = db.Set("gorm:table_options", "ENGINE=InnoDB CHARSET=utf8mb4")
 	tables := []interface{}{
 		// 基础表
 		&User{},

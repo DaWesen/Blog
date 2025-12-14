@@ -321,7 +321,7 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 	if err != nil {
 		return nil, 0, ErrPostIsDeleted
 	}
-	condition := "post_id=?AND parent_id is NULL AND status=`published`"
+	condition := "post_id=?AND parent_id IS NULL AND status='published'"
 	args := []interface{}{post.ID}
 	var total int64
 	err = s.db.WithContext(ctx).
@@ -528,4 +528,133 @@ func (s *commentService) GetCommentLikes(ctx context.Context, commentID uint) (u
 	}
 
 	return comment.LikeCount, nil
+}
+func (s *commentService) IsCommentLiked(ctx context.Context, commentID uint) (bool, error) {
+	//获取用户
+	currentUser, err := s.getCurrentUser(ctx)
+	if err != nil {
+		return false, err
+	}
+	//从redis获取
+	isLiked, err := s.commentCache.IsCommentLiked(ctx, currentUser.ID, commentID)
+	if err != nil {
+		return isLiked, nil
+	}
+	//从sql获取
+	likes, err := s.commentLikeSQL.CommentFindLikes(ctx, "user_id=? AND comment_id=?", currentUser.ID, commentID)
+	if err != nil {
+		return false, err
+	}
+	return len(likes) > 0, nil
+}
+func (s *commentService) CreateReply(ctx context.Context, req *CreateReplyRequest) (*model.Comment, error) {
+	//回复不能为空
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, ErrCommentInvalidContent
+	}
+	//获取用户
+	currentUser, err := s.getCurrentUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	//检查帖子是否存在
+	post, err := s.postSQL.GetPostByID(ctx, req.PostID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrPostIsDeleted
+		}
+		return nil, fmt.Errorf("获取帖子失败：%w", err)
+	}
+	//获取上一级评论
+	parentComment, err := s.commentSQL.GetCommentByID(ctx, req.ParentID)
+	if err != nil {
+		return nil, ErrReplyToNonexistentComment
+	}
+	//创建回复
+	reply := &model.Comment{
+		Content:   content,
+		PostID:    req.PostID,
+		ParentID:  &req.ParentID,
+		UserID:    currentUser.ID,
+		Level:     parentComment.Level + 1,
+		Status:    "published",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	var createdReply *model.Comment
+	//开启事务
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.commentSQL.InsertComment(ctx, reply); err != nil {
+			return fmt.Errorf("保存回复失败:%w", err)
+		}
+		updates := map[string]interface{}{
+			"comment_numbers": post.CommentNumbers + 1,
+			"update_at":       time.Now(),
+		}
+		if err := s.postSQL.UpdatePost(ctx, req.PostID, updates); err != nil {
+			return fmt.Errorf("更新帖子评论数失败:%w", err)
+		}
+		if err := s.commentCache.IncrCommentCount(ctx, req.PostID); err != nil {
+			return fmt.Errorf("评论数缓存失败:%w", err)
+		}
+		createdReply, err = s.getCommentWithUser(ctx, reply.ID)
+		if err != nil {
+			return fmt.Errorf("获取回复详情失败%w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return createdReply, nil
+}
+func (s *commentService) ListReplies(ctx context.Context, commentID uint, page, size int) ([]*model.Comment, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	offset := (page - 1) * size
+	//检查上级评论
+	_, err := s.commentSQL.GetCommentByID(ctx, commentID)
+	if err != nil {
+		return nil, 0, ErrCommentNotFound
+	}
+	//获取回复总数
+	var total int64
+	err = s.db.WithContext(ctx).
+		Model(&model.Comment{}).
+		Where("parent_id=?ANDstatus=`published`", commentID).
+		Count(&total).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("获取回复总数失败:%w", err)
+	}
+	//获取回复列表
+	var replies []*model.Comment
+	err = s.db.WithContext(ctx).
+		Preload("User", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id,name,avatar_url")
+		}).
+		Where("parent_if=?AND status=`published`", commentID).
+		Order("crreated_at ASC").
+		Limit(size).
+		Offset(offset).
+		Find(&replies).Error
+	if err != nil {
+		return nil, 0, fmt.Errorf("获取回复列表失败：%w", err)
+	}
+	for _, reply := range replies {
+		likeCount, err := s.commentCache.CountCommentLikes(ctx, reply.ID)
+		if err == nil {
+			reply.LikeCount = uint(likeCount)
+		} else {
+			dbLikeCount, err := s.commentLikeSQL.CommentFindLikes(ctx, "comment_id=?", reply.ID)
+			if err == nil {
+				reply.LikeCount = uint(len(dbLikeCount))
+			}
+		}
+	}
+	return replies, total, nil
 }
