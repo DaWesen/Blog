@@ -17,6 +17,8 @@ func SetupRouter(
 	postService postservice.PostService,
 	categoryService categoryservice.CategoryService,
 	commentService commentservice.CommentService,
+	lockManager *utils.LockManager,
+	rateLimiter *utils.RateLimiter,
 ) *gin.Engine {
 	router := gin.Default()
 

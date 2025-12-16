@@ -1,4 +1,3 @@
-// service/post_service.go - 完整版本
 package service
 
 import (
@@ -10,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -17,14 +17,16 @@ import (
 
 // 错误定义
 var (
-	ErrPostNotFound       = errors.New("文章不存在")
-	ErrPostSlugExists     = errors.New("文章别名已存在")
-	ErrInvalidPostTitle   = errors.New("文章标题不能为空")
-	ErrUnauthorized       = errors.New("用户未认证")
-	ErrPostAlreadyLiked   = errors.New("已经点赞过此帖子")
-	ErrPostNotLiked       = errors.New("还没有点赞此帖子")
-	ErrPostAlreadyStarred = errors.New("已经收藏过此帖子")
-	ErrPostNotStarred     = errors.New("还没有收藏此帖子")
+	ErrPostNotFound        = errors.New("文章不存在")
+	ErrPostSlugExists      = errors.New("文章别名已存在")
+	ErrInvalidPostTitle    = errors.New("文章标题不能为空")
+	ErrUnauthorized        = errors.New("用户未认证")
+	ErrPostAlreadyLiked    = errors.New("已经点赞过此帖子")
+	ErrPostNotLiked        = errors.New("还没有点赞此帖子")
+	ErrPostAlreadyStarred  = errors.New("已经收藏过此帖子")
+	ErrPostNotStarred      = errors.New("还没有收藏此帖子")
+	ErrRateLimited         = errors.New("操作过于频繁，请稍后再试")
+	ErrOperationInProgress = errors.New("操作正在进行中，请稍后再试")
 )
 
 // PostService 接口 - 包含所有帖子功能
@@ -109,6 +111,19 @@ type postService struct {
 	likeCache    redis.LikeCache
 	starCache    redis.StarCache
 	commentCache redis.CommentCache
+
+	// 分布式锁管理器
+	lockManager *utils.LockManager
+
+	// 限流器
+	rateLimiter *utils.RateLimiter
+
+	// 缓存读取锁（本地锁，用于缓存读保护）
+	readCacheLock sync.RWMutex
+	// 热点数据缓存
+	hotPostsCache map[uint]*model.Post
+	hotPostsTTL   map[uint]time.Time
+	hotPostLock   sync.RWMutex
 }
 
 // 创建Service实例
@@ -125,24 +140,28 @@ func NewPostService(
 	likeCache redis.LikeCache,
 	starCache redis.StarCache,
 	commentCache redis.CommentCache,
+	lockManager *utils.LockManager,
+	rateLimiter *utils.RateLimiter,
 ) PostService {
 	return &postService{
-		postSQL:      postSQL,
-		userSQL:      userSQL,
-		categorySQL:  categorySQL,
-		tagSQL:       tagSQL,
-		likeSQL:      likeSQL,
-		starSQL:      starSQL,
-		commentSQL:   commentSQL,
-		db:           db,
-		viewCache:    viewCache,
-		likeCache:    likeCache,
-		starCache:    starCache,
-		commentCache: commentCache,
+		postSQL:       postSQL,
+		userSQL:       userSQL,
+		categorySQL:   categorySQL,
+		tagSQL:        tagSQL,
+		likeSQL:       likeSQL,
+		starSQL:       starSQL,
+		commentSQL:    commentSQL,
+		db:            db,
+		viewCache:     viewCache,
+		likeCache:     likeCache,
+		starCache:     starCache,
+		commentCache:  commentCache,
+		lockManager:   lockManager,
+		rateLimiter:   rateLimiter,
+		hotPostsCache: make(map[uint]*model.Post),
+		hotPostsTTL:   make(map[uint]time.Time),
 	}
 }
-
-// getCurrentUserIDFromContext 从上下文中获取当前用户ID
 
 // getCurrentUser 从上下文中获取当前用户完整信息
 func (s *postService) getCurrentUser(ctx context.Context) (*model.User, error) {
@@ -150,6 +169,22 @@ func (s *postService) getCurrentUser(ctx context.Context) (*model.User, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// 使用分布式锁保护用户信息获取
+	lockKey := fmt.Sprintf("user_info:%d", userID)
+	lock := s.lockManager.GetLock(lockKey, 5*time.Second)
+
+	// 快速获取锁，避免阻塞
+	acquired, err := lock.Acquire(ctx)
+	if err != nil || !acquired {
+		// 如果获取锁失败，尝试直接查询（可能会有并发问题，但用户信息通常变化不大）
+		user, err := s.userSQL.GetUserByID(ctx, userID)
+		if err != nil {
+			return nil, errors.New("用户不存在")
+		}
+		return user, nil
+	}
+	defer lock.Release(ctx)
 
 	// 从数据库获取用户详细信息
 	user, err := s.userSQL.GetUserByID(ctx, userID)
@@ -160,12 +195,64 @@ func (s *postService) getCurrentUser(ctx context.Context) (*model.User, error) {
 	return user, nil
 }
 
-// getPostWithAssociations 获取帖子及其关联数据
+// getPostWithAssociations 获取帖子及其关联数据（带缓存）
 func (s *postService) getPostWithAssociations(ctx context.Context, postID uint) (*model.Post, error) {
+	// 首先检查热点缓存
+	s.hotPostLock.RLock()
+	if post, ok := s.hotPostsCache[postID]; ok {
+		if s.hotPostsTTL[postID].After(time.Now()) {
+			s.hotPostLock.RUnlock()
+			return post, nil
+		}
+	}
+	s.hotPostLock.RUnlock()
+
+	// 使用分布式锁保护数据库查询
+	lockKey := fmt.Sprintf("post_query:%d", postID)
+	lock := s.lockManager.GetLock(lockKey, 3*time.Second)
+
+	// 使用读锁保护，允许多个读取
+	s.readCacheLock.RLock()
+	acquired, err := lock.Acquire(ctx)
+	if err != nil || !acquired {
+		// 如果获取锁失败，尝试直接查询
+		s.readCacheLock.RUnlock()
+		return s.queryPostWithAssociations(ctx, postID)
+	}
+	defer lock.Release(ctx)
+	s.readCacheLock.RUnlock()
+
+	// 再次检查缓存（防止重复查询）
+	s.hotPostLock.RLock()
+	if post, ok := s.hotPostsCache[postID]; ok {
+		if s.hotPostsTTL[postID].After(time.Now()) {
+			s.hotPostLock.RUnlock()
+			return post, nil
+		}
+	}
+	s.hotPostLock.RUnlock()
+
+	// 查询数据库
+	post, err := s.queryPostWithAssociations(ctx, postID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 更新缓存（只缓存热点数据）
+	if post.Clicktimes > 1000 { // 认为是热点数据
+		s.hotPostLock.Lock()
+		s.hotPostsCache[postID] = post
+		s.hotPostsTTL[postID] = time.Now().Add(5 * time.Minute) // 缓存5分钟
+		s.hotPostLock.Unlock()
+	}
+
+	return post, nil
+}
+
+func (s *postService) queryPostWithAssociations(ctx context.Context, postID uint) (*model.Post, error) {
 	var post model.Post
 	err := s.db.WithContext(ctx).
 		Preload("Author", func(db *gorm.DB) *gorm.DB {
-			// 只选择需要的字段，避免返回敏感信息
 			return db.Select("id, name, avatar_url, bio")
 		}).
 		Preload("Category").
@@ -179,18 +266,28 @@ func (s *postService) getPostWithAssociations(ctx context.Context, postID uint) 
 	return &post, nil
 }
 
-// CreatePost 创建帖子（自动补充作者信息）
+// CreatePost 创建帖子（带限流和锁保护）
 func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*model.Post, error) {
-	// 1. 参数验证
+	// 1. 限流检查：防止用户创建帖子过于频繁
+	currentUser, err := s.getCurrentUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rateLimitKey := fmt.Sprintf("create_post:user:%d", currentUser.ID)
+	rateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Hour,
+		MaxRequests: 50, // 每小时最多创建50个帖子
+	}
+
+	if err := s.rateLimiter.Allow(ctx, rateLimitKey, rateLimitConfig); err != nil {
+		return nil, ErrRateLimited
+	}
+
+	// 2. 参数验证
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		return nil, ErrInvalidPostTitle
-	}
-
-	// 2. 获取当前用户信息（自动补充作者的个人特色昵称）
-	user, err := s.getCurrentUser(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	// 3. 检查分类是否存在
@@ -213,7 +310,17 @@ func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*
 		slug = utils.GenerateSlug(title)
 	}
 
-	// 6. 检查slug是否已存在
+	// 6. 使用分布式锁检查slug是否已存在
+	slugLockKey := fmt.Sprintf("post_slug:%s", slug)
+	slugLock := s.lockManager.GetLock(slugLockKey, 5*time.Second)
+
+	acquired, err := slugLock.AcquireWithRetry(ctx, 3, 100*time.Millisecond)
+	if err != nil || !acquired {
+		return nil, ErrOperationInProgress
+	}
+	defer slugLock.Release(ctx)
+
+	// 检查slug是否已存在
 	existing, _ := s.postSQL.GetPostBySlug(ctx, slug)
 	if existing != nil {
 		// 如果slug已存在，添加时间戳后缀
@@ -230,7 +337,6 @@ func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*
 	// 7. 处理摘要（如果没传则从内容生成）
 	summary := req.Summary
 	if summary == "" && req.Content != "" {
-		// 取内容前200个字符作为摘要，确保不截断中文字符
 		contentRunes := []rune(req.Content)
 		if len(contentRunes) > 200 {
 			summary = string(contentRunes[:200]) + "..."
@@ -247,22 +353,23 @@ func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*
 		visibility = model.VisibilityPublic
 	}
 
-	// 9. 创建帖子对象（设置作者的个人特色昵称）
+	// 9. 创建帖子对象
 	post := &model.Post{
 		Title:      title,
 		Slug:       slug,
 		Content:    req.Content,
 		Summary:    summary,
-		UserID:     user.ID,   // 用户ID用于关联
-		AuthorName: user.Name, // 作者的个人特色昵称，存储在数据库中
+		UserID:     currentUser.ID,
+		AuthorName: currentUser.Name,
 		CategoryID: req.CategoryID,
 		Visibility: visibility,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
 
-	// 10. 开启事务保存帖子和标签关联
-	err = s.db.Transaction(func(tx *gorm.DB) error {
+	// 10. 使用分布式事务锁
+	txLockKey := fmt.Sprintf("post_create:user:%d", currentUser.ID)
+	err = s.lockManager.GetLock(txLockKey, 30*time.Second).Mutex(ctx, func() error {
 		// 保存帖子
 		if err := s.postSQL.InsertPost(ctx, post); err != nil {
 			return fmt.Errorf("保存帖子失败: %w", err)
@@ -276,7 +383,7 @@ func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*
 					TagID:     tagID,
 					CreatedAt: time.Now(),
 				}
-				if err := tx.WithContext(ctx).Create(postTag).Error; err != nil {
+				if err := s.db.WithContext(ctx).Create(postTag).Error; err != nil {
 					return fmt.Errorf("关联标签失败: %w", err)
 				}
 			}
@@ -289,7 +396,7 @@ func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*
 		return nil, err
 	}
 
-	// 11. 获取完整的帖子信息（包含关联数据）
+	// 11. 获取完整的帖子信息
 	fullPost, err := s.getPostWithAssociations(ctx, post.ID)
 	if err != nil {
 		return nil, fmt.Errorf("获取帖子详情失败: %w", err)
@@ -298,8 +405,20 @@ func (s *postService) CreatePost(ctx context.Context, req *CreatePostRequest) (*
 	return fullPost, nil
 }
 
-// GetPost 获取帖子详情
+// GetPost 获取帖子详情（带缓存和限流）
 func (s *postService) GetPost(ctx context.Context, id uint) (*model.Post, error) {
+	// 限流检查：按IP限制获取频率
+	ip := utils.GetIPFromContext(ctx)
+	rateLimitKey := fmt.Sprintf("get_post:ip:%s", ip)
+	rateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 300, // 每分钟最多300次请求
+	}
+
+	if err := s.rateLimiter.Allow(ctx, rateLimitKey, rateLimitConfig); err != nil {
+		return nil, ErrRateLimited
+	}
+
 	post, err := s.getPostWithAssociations(ctx, id)
 	if err != nil {
 		return nil, err
@@ -307,6 +426,8 @@ func (s *postService) GetPost(ctx context.Context, id uint) (*model.Post, error)
 
 	// 异步增加浏览量（不阻塞返回）
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		_ = s.IncrementViews(ctx, id)
 	}()
 
@@ -315,6 +436,18 @@ func (s *postService) GetPost(ctx context.Context, id uint) (*model.Post, error)
 
 // GetPostBySlug 通过slug获取帖子
 func (s *postService) GetPostBySlug(ctx context.Context, slug string) (*model.Post, error) {
+	// 限流检查
+	ip := utils.GetIPFromContext(ctx)
+	rateLimitKey := fmt.Sprintf("get_post_slug:ip:%s", ip)
+	rateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 300,
+	}
+
+	if err := s.rateLimiter.Allow(ctx, rateLimitKey, rateLimitConfig); err != nil {
+		return nil, ErrRateLimited
+	}
+
 	var post model.Post
 	err := s.db.WithContext(ctx).
 		Preload("Author", func(db *gorm.DB) *gorm.DB {
@@ -331,13 +464,15 @@ func (s *postService) GetPostBySlug(ctx context.Context, slug string) (*model.Po
 
 	// 异步增加浏览量
 	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		_ = s.IncrementViews(ctx, post.ID)
 	}()
 
 	return &post, nil
 }
 
-// UpdatePost 更新帖子
+// UpdatePost 更新帖子（带分布式锁）
 func (s *postService) UpdatePost(ctx context.Context, id uint, req *UpdatePostRequest) (*model.Post, error) {
 	// 1. 获取现有帖子
 	post, err := s.postSQL.GetPostByID(ctx, id)
@@ -374,9 +509,19 @@ func (s *postService) UpdatePost(ctx context.Context, id uint, req *UpdatePostRe
 		updates["summary"] = *req.Summary
 	}
 
+	// 使用分布式锁保护slug更新
 	if req.Slug != nil {
 		newSlug := utils.SanitizeSlug(*req.Slug)
 		if newSlug != "" && newSlug != post.Slug {
+			slugLockKey := fmt.Sprintf("post_slug:%s", newSlug)
+			slugLock := s.lockManager.GetLock(slugLockKey, 5*time.Second)
+
+			acquired, err := slugLock.AcquireWithRetry(ctx, 3, 100*time.Millisecond)
+			if err != nil || !acquired {
+				return nil, ErrOperationInProgress
+			}
+			defer slugLock.Release(ctx)
+
 			// 检查新slug是否已被其他帖子使用
 			existing, _ := s.postSQL.GetPostBySlug(ctx, newSlug)
 			if existing != nil && existing.ID != id {
@@ -398,8 +543,6 @@ func (s *postService) UpdatePost(ctx context.Context, id uint, req *UpdatePostRe
 		updates["visibility"] = *req.Visibility
 	}
 
-	// 注意：不更新 AuthorName，因为作者昵称不应该被修改
-
 	// 如果没有更新内容，直接返回
 	if len(updates) == 0 {
 		return s.getPostWithAssociations(ctx, id)
@@ -407,16 +550,32 @@ func (s *postService) UpdatePost(ctx context.Context, id uint, req *UpdatePostRe
 
 	updates["updated_at"] = time.Now()
 
-	// 4. 更新帖子
-	if err := s.postSQL.UpdatePost(ctx, id, updates); err != nil {
-		return nil, fmt.Errorf("更新帖子失败: %w", err)
+	// 4. 使用分布式锁更新帖子
+	lockKey := fmt.Sprintf("post_update:%d", id)
+	err = s.lockManager.GetLock(lockKey, 10*time.Second).Mutex(ctx, func() error {
+		// 更新帖子
+		if err := s.postSQL.UpdatePost(ctx, id, updates); err != nil {
+			return fmt.Errorf("更新帖子失败: %w", err)
+		}
+
+		// 清除缓存
+		s.hotPostLock.Lock()
+		delete(s.hotPostsCache, id)
+		delete(s.hotPostsTTL, id)
+		s.hotPostLock.Unlock()
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	// 5. 获取更新后的帖子
 	return s.getPostWithAssociations(ctx, id)
 }
 
-// DeletePost 删除帖子
+// DeletePost 删除帖子（带分布式锁）
 func (s *postService) DeletePost(ctx context.Context, id uint) error {
 	// 先检查帖子是否存在
 	post, err := s.postSQL.GetPostByID(ctx, id)
@@ -435,10 +594,21 @@ func (s *postService) DeletePost(ctx context.Context, id uint) error {
 		return errors.New("没有权限删除此帖子")
 	}
 
-	return s.postSQL.DeletePost(ctx, id)
+	// 使用分布式锁保护删除操作
+	lockKey := fmt.Sprintf("post_delete:%d", id)
+	return s.lockManager.GetLock(lockKey, 30*time.Second).Mutex(ctx, func() error {
+		// 清除缓存
+		s.hotPostLock.Lock()
+		delete(s.hotPostsCache, id)
+		delete(s.hotPostsTTL, id)
+		s.hotPostLock.Unlock()
+
+		// 删除帖子
+		return s.postSQL.DeletePost(ctx, id)
+	})
 }
 
-// ListPosts 分页列出帖子
+// ListPosts 分页列出帖子（带缓存）
 func (s *postService) ListPosts(ctx context.Context, page, size int) ([]*model.Post, int64, error) {
 	if page < 1 {
 		page = 1
@@ -447,10 +617,26 @@ func (s *postService) ListPosts(ctx context.Context, page, size int) ([]*model.P
 		size = 20
 	}
 
+	// 限流检查
+	ip := utils.GetIPFromContext(ctx)
+	rateLimitKey := fmt.Sprintf("list_posts:ip:%s", ip)
+	rateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 500,
+	}
+
+	if err := s.rateLimiter.Allow(ctx, rateLimitKey, rateLimitConfig); err != nil {
+		return nil, 0, ErrRateLimited
+	}
+
 	offset := (page - 1) * size
 
 	var posts []*model.Post
 	var total int64
+
+	// 使用读锁保护缓存读取
+	s.readCacheLock.RLock()
+	defer s.readCacheLock.RUnlock()
 
 	// 统计总数
 	s.db.WithContext(ctx).
@@ -569,6 +755,18 @@ func (s *postService) SearchPosts(ctx context.Context, keyword string, page, siz
 		size = 20
 	}
 
+	// 限流检查：搜索操作比较消耗资源
+	ip := utils.GetIPFromContext(ctx)
+	rateLimitKey := fmt.Sprintf("search_posts:ip:%s", ip)
+	rateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 100,
+	}
+
+	if err := s.rateLimiter.Allow(ctx, rateLimitKey, rateLimitConfig); err != nil {
+		return nil, 0, ErrRateLimited
+	}
+
 	offset := (page - 1) * size
 
 	keyword = strings.TrimSpace(keyword)
@@ -609,7 +807,7 @@ func (s *postService) SearchPosts(ctx context.Context, keyword string, page, siz
 	return posts, total, nil
 }
 
-// LikePost 点赞帖子
+// LikePost 点赞帖子（完整分布式锁实现）
 func (s *postService) LikePost(ctx context.Context, postID uint) error {
 	// 1. 获取当前用户
 	currentUser, err := s.getCurrentUser(ctx)
@@ -617,53 +815,76 @@ func (s *postService) LikePost(ctx context.Context, postID uint) error {
 		return err
 	}
 
-	// 2. 检查帖子是否存在
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
+	// 2. 用户级限流：防止用户频繁点赞
+	userRateLimitKey := fmt.Sprintf("like_post:user:%d", currentUser.ID)
+	userRateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 60, // 每分钟最多点赞60次
 	}
 
-	// 3. 检查是否已经点赞过
-	isLiked, err := s.likeCache.IsLiked(ctx, currentUser.ID, postID)
-	if err != nil {
-		// Redis查询失败，从MySQL检查
-		likes, err := s.likeSQL.FindLikes(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
-		if err == nil && len(likes) > 0 {
+	if err := s.rateLimiter.Allow(ctx, userRateLimitKey, userRateLimitConfig); err != nil {
+		return ErrRateLimited
+	}
+
+	// 3. 使用用户+帖子级别的分布式锁，防止重复点赞
+	lockKey := fmt.Sprintf("post_like:%d:user:%d", postID, currentUser.ID)
+
+	err = s.lockManager.GetLock(lockKey, 10*time.Second).Mutex(ctx, func() error {
+		// 4. 检查帖子是否存在
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
+		}
+
+		// 5. 检查是否已经点赞过
+		isLiked, err := s.likeCache.IsLiked(ctx, currentUser.ID, postID)
+		if err != nil {
+			// Redis查询失败，从MySQL检查
+			likes, err := s.likeSQL.FindLikes(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
+			if err == nil && len(likes) > 0 {
+				return ErrPostAlreadyLiked
+			}
+		} else if isLiked {
 			return ErrPostAlreadyLiked
 		}
-	} else if isLiked {
-		return ErrPostAlreadyLiked
-	}
 
-	// 4. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 4.1 保存到MySQL点赞表
-		if err := s.likeSQL.InsertLike(ctx, currentUser.ID, postID); err != nil {
-			return fmt.Errorf("保存点赞记录失败: %w", err)
-		}
+		// 6. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 6.1 保存到MySQL点赞表
+			if err := s.likeSQL.InsertLike(ctx, currentUser.ID, postID); err != nil {
+				return fmt.Errorf("保存点赞记录失败: %w", err)
+			}
 
-		// 4.2 更新帖子点赞数
-		updates := map[string]interface{}{
-			"liketimes":  post.Liketimes + 1,
-			"updated_at": time.Now(),
-		}
-		if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-			return fmt.Errorf("更新帖子点赞数失败: %w", err)
-		}
+			// 6.2 更新帖子点赞数
+			updates := map[string]interface{}{
+				"liketimes":  post.Liketimes + 1,
+				"updated_at": time.Now(),
+			}
+			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+				return fmt.Errorf("更新帖子点赞数失败: %w", err)
+			}
 
-		// 4.3 保存到Redis缓存
-		if err := s.likeCache.Like(ctx, currentUser.ID, postID); err != nil {
-			// Redis操作失败不影响主流程，记录日志即可
-			fmt.Printf("Redis点赞缓存失败: %v\n", err)
-		}
+			// 6.3 保存到Redis缓存
+			if err := s.likeCache.Like(ctx, currentUser.ID, postID); err != nil {
+				fmt.Printf("Redis点赞缓存失败: %v\n", err)
+			}
 
-		return nil
+			// 6.4 清除缓存
+			s.hotPostLock.Lock()
+			delete(s.hotPostsCache, postID)
+			delete(s.hotPostsTTL, postID)
+			s.hotPostLock.Unlock()
+
+			return nil
+		})
+
+		return err
 	})
 
 	return err
 }
 
-// UnlikePost 取消点赞
+// UnlikePost 取消点赞（完整分布式锁实现）
 func (s *postService) UnlikePost(ctx context.Context, postID uint) error {
 	// 1. 获取当前用户
 	currentUser, err := s.getCurrentUser(ctx)
@@ -671,54 +892,67 @@ func (s *postService) UnlikePost(ctx context.Context, postID uint) error {
 		return err
 	}
 
-	// 2. 检查帖子是否存在
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
-	}
+	// 2. 使用用户+帖子级别的分布式锁
+	lockKey := fmt.Sprintf("post_like:%d:user:%d", postID, currentUser.ID)
 
-	// 3. 检查是否已经点赞过
-	isLiked, err := s.likeCache.IsLiked(ctx, currentUser.ID, postID)
-	if err != nil {
-		// Redis查询失败，从MySQL检查
-		likes, err := s.likeSQL.FindLikes(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
-		if err != nil || len(likes) == 0 {
+	err = s.lockManager.GetLock(lockKey, 10*time.Second).Mutex(ctx, func() error {
+		// 3. 检查帖子是否存在
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
+		}
+
+		// 4. 检查是否已经点赞过
+		isLiked, err := s.likeCache.IsLiked(ctx, currentUser.ID, postID)
+		if err != nil {
+			// Redis查询失败，从MySQL检查
+			likes, err := s.likeSQL.FindLikes(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
+			if err != nil || len(likes) == 0 {
+				return ErrPostNotLiked
+			}
+		} else if !isLiked {
 			return ErrPostNotLiked
 		}
-	} else if !isLiked {
-		return ErrPostNotLiked
-	}
 
-	// 4. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 4.1 从MySQL删除点赞记录
-		if err := s.likeSQL.DeleteLike(ctx, currentUser.ID, postID); err != nil {
-			return fmt.Errorf("删除点赞记录失败: %w", err)
-		}
-
-		// 4.2 更新帖子点赞数
-		if post.Liketimes > 0 {
-			updates := map[string]interface{}{
-				"liketimes":  post.Liketimes - 1,
-				"updated_at": time.Now(),
+		// 5. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 5.1 从MySQL删除点赞记录
+			if err := s.likeSQL.DeleteLike(ctx, currentUser.ID, postID); err != nil {
+				return fmt.Errorf("删除点赞记录失败: %w", err)
 			}
-			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-				return fmt.Errorf("更新帖子点赞数失败: %w", err)
+
+			// 5.2 更新帖子点赞数
+			if post.Liketimes > 0 {
+				updates := map[string]interface{}{
+					"liketimes":  post.Liketimes - 1,
+					"updated_at": time.Now(),
+				}
+				if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+					return fmt.Errorf("更新帖子点赞数失败: %w", err)
+				}
 			}
-		}
 
-		// 4.3 从Redis缓存删除
-		if err := s.likeCache.Unlike(ctx, currentUser.ID, postID); err != nil {
-			fmt.Printf("Redis取消点赞缓存失败: %v\n", err)
-		}
+			// 5.3 从Redis缓存删除
+			if err := s.likeCache.Unlike(ctx, currentUser.ID, postID); err != nil {
+				fmt.Printf("Redis取消点赞缓存失败: %v\n", err)
+			}
 
-		return nil
+			// 5.4 清除缓存
+			s.hotPostLock.Lock()
+			delete(s.hotPostsCache, postID)
+			delete(s.hotPostsTTL, postID)
+			s.hotPostLock.Unlock()
+
+			return nil
+		})
+
+		return err
 	})
 
 	return err
 }
 
-// GetPostLikes 获取帖子点赞数
+// GetPostLikes 获取帖子点赞数（带缓存）
 func (s *postService) GetPostLikes(ctx context.Context, postID uint) (uint, error) {
 	// 1. 尝试从Redis获取
 	count, err := s.likeCache.CountLikes(ctx, postID)
@@ -758,7 +992,7 @@ func (s *postService) IsPostLiked(ctx context.Context, postID uint) (bool, error
 	return len(likes) > 0, nil
 }
 
-// StarPost 收藏帖子
+// StarPost 收藏帖子（完整分布式锁实现）
 func (s *postService) StarPost(ctx context.Context, postID uint) error {
 	// 1. 获取当前用户
 	currentUser, err := s.getCurrentUser(ctx)
@@ -766,52 +1000,76 @@ func (s *postService) StarPost(ctx context.Context, postID uint) error {
 		return err
 	}
 
-	// 2. 检查帖子是否存在
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
+	// 2. 用户级限流
+	userRateLimitKey := fmt.Sprintf("star_post:user:%d", currentUser.ID)
+	userRateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 60,
 	}
 
-	// 3. 检查是否已经收藏过
-	isStarred, err := s.starCache.IsStarred(ctx, currentUser.ID, postID)
-	if err != nil {
-		// Redis查询失败，从MySQL检查
-		stars, err := s.starSQL.FindStars(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
-		if err == nil && len(stars) > 0 {
+	if err := s.rateLimiter.Allow(ctx, userRateLimitKey, userRateLimitConfig); err != nil {
+		return ErrRateLimited
+	}
+
+	// 3. 使用用户+帖子级别的分布式锁
+	lockKey := fmt.Sprintf("post_star:%d:user:%d", postID, currentUser.ID)
+
+	err = s.lockManager.GetLock(lockKey, 10*time.Second).Mutex(ctx, func() error {
+		// 4. 检查帖子是否存在
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
+		}
+
+		// 5. 检查是否已经收藏过
+		isStarred, err := s.starCache.IsStarred(ctx, currentUser.ID, postID)
+		if err != nil {
+			// Redis查询失败，从MySQL检查
+			stars, err := s.starSQL.FindStars(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
+			if err == nil && len(stars) > 0 {
+				return ErrPostAlreadyStarred
+			}
+		} else if isStarred {
 			return ErrPostAlreadyStarred
 		}
-	} else if isStarred {
-		return ErrPostAlreadyStarred
-	}
 
-	// 4. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 4.1 保存到MySQL收藏表
-		if err := s.starSQL.InsertStar(ctx, currentUser.ID, postID); err != nil {
-			return fmt.Errorf("保存收藏记录失败: %w", err)
-		}
+		// 6. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 6.1 保存到MySQL收藏表
+			if err := s.starSQL.InsertStar(ctx, currentUser.ID, postID); err != nil {
+				return fmt.Errorf("保存收藏记录失败: %w", err)
+			}
 
-		// 4.2 更新帖子收藏数
-		updates := map[string]interface{}{
-			"staredtimes": post.Staredtimes + 1,
-			"updated_at":  time.Now(),
-		}
-		if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-			return fmt.Errorf("更新帖子收藏数失败: %w", err)
-		}
+			// 6.2 更新帖子收藏数
+			updates := map[string]interface{}{
+				"staredtimes": post.Staredtimes + 1,
+				"updated_at":  time.Now(),
+			}
+			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+				return fmt.Errorf("更新帖子收藏数失败: %w", err)
+			}
 
-		// 4.3 保存到Redis缓存
-		if err := s.starCache.Star(ctx, currentUser.ID, postID); err != nil {
-			fmt.Printf("Redis收藏缓存失败: %v\n", err)
-		}
+			// 6.3 保存到Redis缓存
+			if err := s.starCache.Star(ctx, currentUser.ID, postID); err != nil {
+				fmt.Printf("Redis收藏缓存失败: %v\n", err)
+			}
 
-		return nil
+			// 6.4 清除缓存
+			s.hotPostLock.Lock()
+			delete(s.hotPostsCache, postID)
+			delete(s.hotPostsTTL, postID)
+			s.hotPostLock.Unlock()
+
+			return nil
+		})
+
+		return err
 	})
 
 	return err
 }
 
-// UnstarPost 取消收藏
+// UnstarPost 取消收藏（完整分布式锁实现）
 func (s *postService) UnstarPost(ctx context.Context, postID uint) error {
 	// 1. 获取当前用户
 	currentUser, err := s.getCurrentUser(ctx)
@@ -819,54 +1077,67 @@ func (s *postService) UnstarPost(ctx context.Context, postID uint) error {
 		return err
 	}
 
-	// 2. 检查帖子是否存在
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
-	}
+	// 2. 使用用户+帖子级别的分布式锁
+	lockKey := fmt.Sprintf("post_star:%d:user:%d", postID, currentUser.ID)
 
-	// 3. 检查是否已经收藏过
-	isStarred, err := s.starCache.IsStarred(ctx, currentUser.ID, postID)
-	if err != nil {
-		// Redis查询失败，从MySQL检查
-		stars, err := s.starSQL.FindStars(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
-		if err != nil || len(stars) == 0 {
+	err = s.lockManager.GetLock(lockKey, 10*time.Second).Mutex(ctx, func() error {
+		// 3. 检查帖子是否存在
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
+		}
+
+		// 4. 检查是否已经收藏过
+		isStarred, err := s.starCache.IsStarred(ctx, currentUser.ID, postID)
+		if err != nil {
+			// Redis查询失败，从MySQL检查
+			stars, err := s.starSQL.FindStars(ctx, "user_id = ? AND post_id = ?", currentUser.ID, postID)
+			if err != nil || len(stars) == 0 {
+				return ErrPostNotStarred
+			}
+		} else if !isStarred {
 			return ErrPostNotStarred
 		}
-	} else if !isStarred {
-		return ErrPostNotStarred
-	}
 
-	// 4. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 4.1 从MySQL删除收藏记录
-		if err := s.starSQL.DeleteStar(ctx, currentUser.ID, postID); err != nil {
-			return fmt.Errorf("删除收藏记录失败: %w", err)
-		}
-
-		// 4.2 更新帖子收藏数
-		if post.Staredtimes > 0 {
-			updates := map[string]interface{}{
-				"staredtimes": post.Staredtimes - 1,
-				"updated_at":  time.Now(),
+		// 5. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 5.1 从MySQL删除收藏记录
+			if err := s.starSQL.DeleteStar(ctx, currentUser.ID, postID); err != nil {
+				return fmt.Errorf("删除收藏记录失败: %w", err)
 			}
-			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-				return fmt.Errorf("更新帖子收藏数失败: %w", err)
+
+			// 5.2 更新帖子收藏数
+			if post.Staredtimes > 0 {
+				updates := map[string]interface{}{
+					"staredtimes": post.Staredtimes - 1,
+					"updated_at":  time.Now(),
+				}
+				if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+					return fmt.Errorf("更新帖子收藏数失败: %w", err)
+				}
 			}
-		}
 
-		// 4.3 从Redis缓存删除
-		if err := s.starCache.Unstar(ctx, currentUser.ID, postID); err != nil {
-			fmt.Printf("Redis取消收藏缓存失败: %v\n", err)
-		}
+			// 5.3 从Redis缓存删除
+			if err := s.starCache.Unstar(ctx, currentUser.ID, postID); err != nil {
+				fmt.Printf("Redis取消收藏缓存失败: %v\n", err)
+			}
 
-		return nil
+			// 5.4 清除缓存
+			s.hotPostLock.Lock()
+			delete(s.hotPostsCache, postID)
+			delete(s.hotPostsTTL, postID)
+			s.hotPostLock.Unlock()
+
+			return nil
+		})
+
+		return err
 	})
 
 	return err
 }
 
-// GetPostStars 获取帖子收藏数
+// GetPostStars 获取帖子收藏数（带缓存）
 func (s *postService) GetPostStars(ctx context.Context, postID uint) (uint, error) {
 	// 1. 尝试从Redis获取
 	count, err := s.starCache.CountStars(ctx, postID)
@@ -906,7 +1177,7 @@ func (s *postService) IsPostStarred(ctx context.Context, postID uint) (bool, err
 	return len(stars) > 0, nil
 }
 
-// GetPostCommentsCount 获取帖子评论数
+// GetPostCommentsCount 获取帖子评论数（带缓存）
 func (s *postService) GetPostCommentsCount(ctx context.Context, postID uint) (uint, error) {
 	// 1. 尝试从Redis获取
 	count, err := s.commentCache.GetCommentCount(ctx, postID)
@@ -923,103 +1194,130 @@ func (s *postService) GetPostCommentsCount(ctx context.Context, postID uint) (ui
 	return post.CommentNumbers, nil
 }
 
-// IncrementComments 增加评论数（由评论服务调用）
+// IncrementComments 增加评论数（带分布式锁）
 func (s *postService) IncrementComments(ctx context.Context, postID uint) error {
-	// 1. 获取帖子
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
-	}
+	// 使用分布式锁
+	lockKey := fmt.Sprintf("post_comments:%d", postID)
 
-	// 2. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 更新帖子评论数
-		updates := map[string]interface{}{
-			"comment_numbers": post.CommentNumbers + 1,
-			"updated_at":      time.Now(),
-		}
-		if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-			return fmt.Errorf("更新帖子评论数失败: %w", err)
+	return s.lockManager.GetLock(lockKey, 5*time.Second).Mutex(ctx, func() error {
+		// 1. 获取帖子
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
 		}
 
-		// 更新Redis缓存
-		if err := s.commentCache.IncrCommentCount(ctx, postID); err != nil {
-			fmt.Printf("Redis评论数缓存失败: %v\n", err)
-		}
+		// 2. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 更新帖子评论数
+			updates := map[string]interface{}{
+				"comment_numbers": post.CommentNumbers + 1,
+				"updated_at":      time.Now(),
+			}
+			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+				return fmt.Errorf("更新帖子评论数失败: %w", err)
+			}
 
-		return nil
+			// 更新Redis缓存
+			if err := s.commentCache.IncrCommentCount(ctx, postID); err != nil {
+				fmt.Printf("Redis评论数缓存失败: %v\n", err)
+			}
+
+			// 清除缓存
+			s.hotPostLock.Lock()
+			delete(s.hotPostsCache, postID)
+			delete(s.hotPostsTTL, postID)
+			s.hotPostLock.Unlock()
+
+			return nil
+		})
+
+		return err
 	})
-
-	return err
 }
 
-// DecrementComments 减少评论数（由评论服务调用）
+// DecrementComments 减少评论数（带分布式锁）
 func (s *postService) DecrementComments(ctx context.Context, postID uint) error {
-	// 1. 获取帖子
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
-	}
+	// 使用分布式锁
+	lockKey := fmt.Sprintf("post_comments:%d", postID)
 
-	// 2. 确保评论数不小于0
-	newCount := uint(0)
-	if post.CommentNumbers > 0 {
-		newCount = post.CommentNumbers - 1
-	}
-
-	// 3. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 更新帖子评论数
-		updates := map[string]interface{}{
-			"comment_numbers": newCount,
-			"updated_at":      time.Now(),
-		}
-		if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-			return fmt.Errorf("更新帖子评论数失败: %w", err)
+	return s.lockManager.GetLock(lockKey, 5*time.Second).Mutex(ctx, func() error {
+		// 1. 获取帖子
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
 		}
 
-		// 更新Redis缓存
-		if err := s.commentCache.DecrCommentCount(ctx, postID); err != nil {
-			fmt.Printf("Redis评论数缓存失败: %v\n", err)
+		// 2. 确保评论数不小于0
+		newCount := uint(0)
+		if post.CommentNumbers > 0 {
+			newCount = post.CommentNumbers - 1
 		}
 
-		return nil
+		// 3. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 更新帖子评论数
+			updates := map[string]interface{}{
+				"comment_numbers": newCount,
+				"updated_at":      time.Now(),
+			}
+			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+				return fmt.Errorf("更新帖子评论数失败: %w", err)
+			}
+
+			// 更新Redis缓存
+			if err := s.commentCache.DecrCommentCount(ctx, postID); err != nil {
+				fmt.Printf("Redis评论数缓存失败: %v\n", err)
+			}
+
+			// 清除缓存
+			s.hotPostLock.Lock()
+			delete(s.hotPostsCache, postID)
+			delete(s.hotPostsTTL, postID)
+			s.hotPostLock.Unlock()
+
+			return nil
+		})
+
+		return err
 	})
-
-	return err
 }
 
-// IncrementViews 增加浏览量
+// IncrementViews 增加浏览量（带分布式锁）
 func (s *postService) IncrementViews(ctx context.Context, postID uint) error {
-	// 1. 获取帖子
-	post, err := s.postSQL.GetPostByID(ctx, postID)
-	if err != nil {
-		return ErrPostNotFound
-	}
+	// 使用分布式锁
+	lockKey := fmt.Sprintf("post_views:%d", postID)
 
-	// 2. 开启事务
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 更新帖子浏览量
-		updates := map[string]interface{}{
-			"clicktimes": post.Clicktimes + 1,
-			"updated_at": time.Now(),
-		}
-		if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
-			return fmt.Errorf("更新帖子浏览量失败: %w", err)
+	return s.lockManager.GetLock(lockKey, 3*time.Second).Mutex(ctx, func() error {
+		// 1. 获取帖子
+		post, err := s.postSQL.GetPostByID(ctx, postID)
+		if err != nil {
+			return ErrPostNotFound
 		}
 
-		// 更新Redis缓存
-		if err := s.viewCache.IncrViewCount(ctx, postID); err != nil {
-			fmt.Printf("Redis浏览量缓存失败: %v\n", err)
-		}
+		// 2. 开启事务
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// 更新帖子浏览量
+			updates := map[string]interface{}{
+				"clicktimes": post.Clicktimes + 1,
+				"updated_at": time.Now(),
+			}
+			if err := s.postSQL.UpdatePost(ctx, postID, updates); err != nil {
+				return fmt.Errorf("更新帖子浏览量失败: %w", err)
+			}
 
-		return nil
+			// 更新Redis缓存
+			if err := s.viewCache.IncrViewCount(ctx, postID); err != nil {
+				fmt.Printf("Redis浏览量缓存失败: %v\n", err)
+			}
+
+			return nil
+		})
+
+		return err
 	})
-
-	return err
 }
 
-// GetPostViews 获取帖子浏览量
+// GetPostViews 获取帖子浏览量（带缓存）
 func (s *postService) GetPostViews(ctx context.Context, postID uint) (uint, error) {
 	// 1. 尝试从Redis获取
 	count, err := s.viewCache.GetViewCount(ctx, postID)
@@ -1036,7 +1334,7 @@ func (s *postService) GetPostViews(ctx context.Context, postID uint) (uint, erro
 	return post.Clicktimes, nil
 }
 
-// GetPostStats 获取帖子综合统计数据
+// GetPostStats 获取帖子综合统计数据（带缓存和并行获取）
 func (s *postService) GetPostStats(ctx context.Context, postID uint) (*PostStats, error) {
 	// 1. 检查帖子是否存在
 	post, err := s.postSQL.GetPostByID(ctx, postID)
@@ -1047,6 +1345,11 @@ func (s *postService) GetPostStats(ctx context.Context, postID uint) (*PostStats
 	// 2. 获取当前用户（用于判断是否点赞/收藏）
 	currentUser, _ := s.getCurrentUser(ctx) // 忽略错误，游客也可以查看统计
 
+	// 3. 并行获取所有统计信息
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var statsErr error
+
 	stats := &PostStats{
 		PostID:   postID,
 		Likes:    post.Liketimes,
@@ -1055,25 +1358,45 @@ func (s *postService) GetPostStats(ctx context.Context, postID uint) (*PostStats
 		Views:    post.Clicktimes,
 	}
 
-	// 3. 如果用户已登录，获取点赞和收藏状态
+	// 如果用户已登录，并行获取点赞和收藏状态
 	if currentUser != nil {
-		// 并行获取点赞和收藏状态
-		likeChan := make(chan bool, 1)
-		starChan := make(chan bool, 1)
+		wg.Add(2)
 
+		// 获取点赞状态
 		go func() {
-			isLiked, _ := s.IsPostLiked(ctx, postID)
-			likeChan <- isLiked
+			defer wg.Done()
+			isLiked, err := s.IsPostLiked(ctx, postID)
+			mu.Lock()
+			if err != nil {
+				statsErr = fmt.Errorf("获取点赞状态失败: %w", err)
+			} else {
+				stats.IsLiked = isLiked
+			}
+			mu.Unlock()
 		}()
 
+		// 获取收藏状态
 		go func() {
-			isStarred, _ := s.IsPostStarred(ctx, postID)
-			starChan <- isStarred
+			defer wg.Done()
+			isStarred, err := s.IsPostStarred(ctx, postID)
+			mu.Lock()
+			if err != nil {
+				statsErr = fmt.Errorf("获取收藏状态失败: %w", err)
+			} else {
+				stats.IsStarred = isStarred
+			}
+			mu.Unlock()
 		}()
 
-		stats.IsLiked = <-likeChan
-		stats.IsStarred = <-starChan
+		wg.Wait()
 	}
+
+	// 检查是否有错误
+	mu.Lock()
+	if statsErr != nil {
+		return nil, statsErr
+	}
+	mu.Unlock()
 
 	return stats, nil
 }
