@@ -1,4 +1,3 @@
-// service/category_service.go - 完整版本（含分布式锁和限流）
 package service
 
 import (
