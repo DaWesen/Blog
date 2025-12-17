@@ -3,6 +3,8 @@ package handler
 import (
 	"blog/model"
 	postservice "blog/service/PostService"
+	"blog/utils"
+	"context"
 	"net/http"
 	"strconv"
 
@@ -36,7 +38,18 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 		return
 	}
 
-	post, err := h.postService.CreatePost(c.Request.Context(), &req)
+	// 从Gin上下文中获取当前用户ID
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+
+	// 创建一个新的context，注入user_id
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
+
+	// 传递新的context给Service
+	post, err := h.postService.CreatePost(ctx, &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {
@@ -101,8 +114,13 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "请求参数错误", Details: err.Error()})
 		return
 	}
-
-	post, err := h.postService.UpdatePost(c.Request.Context(), uint(id), &req)
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
+	post, err := h.postService.UpdatePost(ctx, uint(id), &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {
@@ -130,8 +148,14 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的文章ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.postService.DeletePost(c.Request.Context(), uint(id))
+	err = h.postService.DeletePost(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {
@@ -257,8 +281,14 @@ func (h *PostHandler) LikePost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的文章ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.postService.LikePost(c.Request.Context(), uint(id))
+	err = h.postService.LikePost(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {
@@ -284,8 +314,14 @@ func (h *PostHandler) UnlikePost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的文章ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.postService.UnlikePost(c.Request.Context(), uint(id))
+	err = h.postService.UnlikePost(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {
@@ -311,8 +347,13 @@ func (h *PostHandler) StarPost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的文章ID"})
 		return
 	}
-
-	err = h.postService.StarPost(c.Request.Context(), uint(id))
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
+	err = h.postService.StarPost(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {
@@ -338,8 +379,14 @@ func (h *PostHandler) UnstarPost(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的文章ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.postService.UnstarPost(c.Request.Context(), uint(id))
+	err = h.postService.UnstarPost(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		switch err {

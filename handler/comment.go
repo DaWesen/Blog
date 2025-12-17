@@ -4,6 +4,7 @@ import (
 	"blog/model"
 	commentservice "blog/service/CommentService"
 	"blog/utils"
+	"context"
 	"net/http"
 	"strconv"
 
@@ -46,8 +47,14 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "请求参数错误", Details: err.Error()})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	comment, err := h.commentService.CreateComment(c.Request.Context(), &req)
+	comment, err := h.commentService.CreateComment(ctx, &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == commentservice.ErrUnauthorized {
@@ -86,8 +93,14 @@ func (h *CommentHandler) DeleteComment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的评论ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.commentService.DeleteComment(c.Request.Context(), uint(id))
+	err = h.commentService.DeleteComment(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == commentservice.ErrCommentNotFound {
@@ -116,7 +129,26 @@ func (h *CommentHandler) ListCommentsByPost(c *gin.Context) {
 
 	comments, total, err := h.commentService.ListCommentsByPost(c.Request.Context(), uint(postID), page, size)
 	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "文章不存在"})
+		status := http.StatusInternalServerError
+		errorMsg := "获取评论失败"
+
+		// 根据错误类型返回不同的状态码和错误信息
+		if err == commentservice.ErrPostIsDeleted {
+			status = http.StatusNotFound
+			errorMsg = "文章不存在或已被删除"
+		} else if err == commentservice.ErrRateLimited {
+			status = http.StatusTooManyRequests
+			errorMsg = "请求过于频繁，请稍后再试"
+		} else {
+			// 记录服务器错误日志
+			slog.Error("获取评论列表失败",
+				"postID", postID,
+				"page", page,
+				"size", size,
+				"error", err)
+		}
+
+		c.JSON(status, ErrorResponse{Error: errorMsg})
 		return
 	}
 
@@ -176,8 +208,14 @@ func (h *CommentHandler) LikeComment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的评论ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.commentService.LikeComment(c.Request.Context(), uint(id))
+	err = h.commentService.LikeComment(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == commentservice.ErrCommentNotFound {
@@ -202,8 +240,14 @@ func (h *CommentHandler) UnlikeComment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的评论ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.commentService.UnlikeComment(c.Request.Context(), uint(id))
+	err = h.commentService.UnlikeComment(ctx, uint(id))
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == commentservice.ErrCommentNotFound {
@@ -227,8 +271,14 @@ func (h *CommentHandler) CreateReply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "请求参数错误", Details: err.Error()})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	reply, err := h.commentService.CreateReply(c.Request.Context(), &req)
+	reply, err := h.commentService.CreateReply(ctx, &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == commentservice.ErrUnauthorized {

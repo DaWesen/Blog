@@ -2,6 +2,7 @@ package handler
 
 import (
 	userservice "blog/service/UserService"
+	"context"
 
 	"blog/utils"
 	"net/http"
@@ -97,8 +98,9 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: err.Error()})
 		return
 	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
 
-	resp, err := h.userService.GetUserProfile(c.Request.Context(), userID)
+	resp, err := h.userService.GetUserProfile(ctx, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 		return
@@ -120,8 +122,9 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "请求参数错误", Details: err.Error()})
 		return
 	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", userID)
 
-	resp, err := h.userService.UpdateProfile(c.Request.Context(), userID, &req)
+	resp, err := h.userService.UpdateProfile(ctx, userID, &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == userservice.ErrUsernameExists {
@@ -142,9 +145,20 @@ func (h *UserHandler) GetUserPublicProfile(c *gin.Context) {
 		return
 	}
 
+	// 特殊处理 "count" 请求
+	if username == "count" {
+		c.JSON(http.StatusOK, gin.H{
+			"count":   0,
+			"message": "用户统计接口已迁移到 /api/stats/users/count",
+		})
+		return
+	}
+
 	resp, err := h.userService.GetUserPublicProfile(c.Request.Context(), username)
 	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		// 记录错误日志但不暴露详细信息
+		slog.Error("获取用户公开资料失败", "username", username, "error", err)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "用户不存在"})
 		return
 	}
 

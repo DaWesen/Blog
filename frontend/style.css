@@ -1,0 +1,958 @@
+/* 基沃托斯学园博客系统样式 - 蔚蓝档案风格（增强对比度版） */
+
+/* 基础样式 - 增强对比度 */
+:root {
+    /* 蔚蓝档案主色调 - 增强对比度 */
+    --primary-color: #2A7BFF;
+    --primary-light: #5A9BFF;
+    --primary-dark: #0056CC;
+    
+    --secondary-color: #FF5A8C;
+    --secondary-light: #FF8AB2;
+    --secondary-dark: #D43A6B;
+    
+    --accent-color: #FFC145;
+    --accent-light: #FFD685;
+    --accent-dark: #FFA910;
+    
+    --success-color: #38B982;
+    --warning-color: #FF7A45;
+    --danger-color: #FF4D6D;
+    --info-color: #5A7BFF;
+    
+    /* 背景和文本颜色 - 增强对比度 */
+    --background-color: #F0F4FF;
+    --surface-color: #FFFFFF;
+    --text-primary: #1E2A47;
+    --text-secondary: #4A5568;
+    --text-muted: #718096;
+    
+    --border-color: #D1DBFF;
+    --shadow-color: rgba(42, 123, 255, 0.15);
+    
+    --font-heading: 'M PLUS Rounded 1c', 'Noto Sans SC', sans-serif;
+    --font-body: 'Noto Sans SC', sans-serif;
+    
+    --border-radius: 16px;
+    --border-radius-sm: 8px;
+    --border-radius-lg: 24px;
+    
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body {
+    font-family: var(--font-body);
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    padding-top: 80px;
+    min-height: 100vh;
+    background-image: 
+        radial-gradient(circle at 10% 20%, rgba(42, 123, 255, 0.08) 0%, transparent 20%),
+        radial-gradient(circle at 90% 80%, rgba(255, 90, 140, 0.08) 0%, transparent 20%);
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* 增强卡片背景对比度 */
+.form-card, .feature-card, .search-card, .table-card, .profile-card, .post-detail-card {
+    background: var(--surface-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 8px 30px var(--shadow-color);
+    border: 2px solid var(--border-color); /* 增强边框 */
+    overflow: hidden;
+    transition: var(--transition);
+    margin-bottom: 1.5rem;
+}
+
+/* 增强导航栏对比度 */
+.navbar-custom {
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px var(--shadow-color);
+    padding: 1rem 0;
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* 增强用户名显示 */
+.logo-text {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.4rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* 添加文字阴影增强可读性 */
+}
+
+/* 增强导航链接颜色 */
+.nav-link {
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--border-radius-sm);
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.nav-link:hover {
+    background: rgba(42, 123, 255, 0.15); /* 增强悬停背景 */
+    transform: translateY(-2px);
+    color: var(--primary-color);
+}
+
+.nav-icon {
+    font-size: 1.25rem;
+    color: var(--primary-color);
+}
+
+.nav-label {
+    font-size: 0.85rem;
+    font-weight: 600; /* 增强字体粗细 */
+    color: var(--text-secondary);
+}
+
+/* 增强用户区域显示 */
+#userSection .btn-outline-light {
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+#userSection .btn-outline-light:hover {
+    background: var(--primary-color);
+    color: white !important;
+    border-color: var(--primary-color) !important;
+}
+
+/* 增强个人资料页面 */
+.profile-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.1), rgba(255, 90, 140, 0.1));
+}
+
+.profile-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 180px; /* 增加高度 */
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+}
+
+.profile-card-header {
+    position: relative;
+    padding: 3rem 2rem 2rem; /* 增加内边距 */
+    text-align: center;
+    z-index: 1;
+}
+
+.profile-card-icon {
+    width: 120px; /* 增大尺寸 */
+    height: 120px;
+    margin: 0 auto 1.5rem;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-color);
+    font-size: 3.5rem; /* 增大图标 */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    border: 6px solid white; /* 加粗边框 */
+}
+
+.profile-card-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 2rem; /* 增大字体 */
+    margin-bottom: 0.5rem;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* 添加文字阴影 */
+}
+
+.profile-card-subtitle {
+    color: rgba(255, 255, 255, 0.95); /* 增强对比度 */
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.profile-card-body {
+    position: relative;
+    padding: 3rem 2rem; /* 增加内边距 */
+    background: white; /* 纯白背景增强对比 */
+    margin-top: 60px;
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 15px 40px rgba(42, 123, 255, 0.2);
+    border: 2px solid var(--border-color);
+}
+
+/* 增强表单标签和输入框 */
+.form-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem; /* 增加间距 */
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+}
+
+.input-with-icon .form-control {
+    padding-left: 3rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: rgba(255, 255, 255, 0.95);
+    transition: var(--transition);
+    height: 50px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.input-with-icon .form-control:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(42, 123, 255, 0.25);
+    background: white;
+}
+
+/* 增强主页显示 */
+.jumbotron-custom {
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.15), rgba(255, 90, 140, 0.15));
+    border-radius: var(--border-radius-lg);
+    padding: 4rem 3rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    border: 2px solid rgba(42, 123, 255, 0.2);
+}
+
+.jumbotron-custom .display-4 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 2.8rem; /* 增大字体 */
+    margin-bottom: 1.5rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 2px 10px rgba(42, 123, 255, 0.2);
+}
+
+.jumbotron-custom .lead {
+    font-size: 1.3rem; /* 增大字体 */
+    color: var(--text-secondary);
+    max-width: 700px;
+    margin: 0 auto 3rem;
+    line-height: 1.6;
+    font-weight: 500;
+}
+
+/* 增强按钮对比度 */
+.btn-custom {
+    border: none;
+    border-radius: var(--border-radius);
+    padding: 0.85rem 2rem; /* 增加内边距 */
+    font-weight: 700; /* 加粗字体 */
+    font-family: var(--font-heading);
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    font-size: 1rem;
+    letter-spacing: 0.5px;
+}
+
+.btn-primary-custom {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    box-shadow: 0 6px 20px rgba(42, 123, 255, 0.4);
+}
+
+.btn-primary-custom:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 25px rgba(42, 123, 255, 0.5);
+}
+
+/* 增强表格对比度 */
+.table-custom thead th {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    border: none;
+    padding: 1.5rem 1.25rem;
+    font-weight: 700;
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.table-custom tbody td {
+    padding: 1.25rem 1.25rem;
+    border-color: var(--border-color);
+    vertical-align: middle;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* 增强文章卡片 */
+.post-item {
+    background: var(--surface-color);
+    border-radius: var(--border-radius);
+    padding: 1.75rem;
+    margin-bottom: 1.25rem;
+    border: 2px solid var(--border-color);
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.post-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px; /* 加粗边框 */
+    height: 100%;
+    background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));
+}
+
+.post-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px var(--shadow-color);
+    border-color: var(--primary-light);
+}
+
+.post-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.4rem; /* 增大字体 */
+    margin-bottom: 0.85rem;
+    color: var(--text-primary);
+    text-decoration: none;
+    display: block;
+    cursor: pointer;
+    transition: var(--transition);
+    line-height: 1.4;
+}
+
+.post-title:hover {
+    color: var(--primary-color);
+}
+
+/* 增强页脚 */
+.footer-custom {
+    background: linear-gradient(135deg, #1A2540, #2C3E66);
+    color: white;
+    padding: 4rem 0 2.5rem;
+    margin-top: 5rem;
+    position: relative;
+}
+
+.footer-text {
+    color: rgba(255, 255, 255, 0.9); /* 增强对比度 */
+    margin-bottom: 1.5rem;
+    max-width: 350px;
+    line-height: 1.6;
+    font-size: 1.05rem;
+}
+
+/* 增强下拉菜单 */
+.dropdown-menu-custom {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: 0 15px 35px var(--shadow-color);
+    border: 2px solid var(--border-color);
+    padding: 0.75rem 0;
+    min-width: 200px;
+}
+
+.dropdown-item-custom {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1.5rem;
+    color: var(--text-primary);
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.dropdown-item-custom:hover {
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.1), rgba(255, 90, 140, 0.1));
+    color: var(--primary-color);
+    transform: translateX(5px);
+}
+
+/* 增强页面标题 */
+.page-header {
+    background: var(--surface-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 10px 30px var(--shadow-color);
+    border: 2px solid var(--border-color);
+    padding: 2rem;
+    margin-bottom: 2.5rem;
+}
+
+.page-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 2.2rem;
+    margin: 0;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.page-subtitle {
+    color: var(--text-secondary);
+    margin: 0.75rem 0 0;
+    font-size: 1.15rem;
+    font-weight: 500;
+}
+
+/* 增强评论区域 */
+.comment-section {
+    background: var(--surface-color);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+    box-shadow: 0 10px 35px var(--shadow-color);
+    border: 2px solid var(--border-color);
+}
+
+.comment-section-header {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    padding: 1.75rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+}
+
+.comment-section-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    margin: 0;
+    font-size: 1.75rem;
+}
+
+.comment-item {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+    border: 2px solid var(--border-color);
+    position: relative;
+    transition: var(--transition);
+}
+
+.comment-item:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 6px 20px var(--shadow-color);
+    transform: translateY(-2px);
+}
+
+.comment-author {
+    font-weight: 700; /* 加粗作者名 */
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+
+/* 增强特性卡片 */
+.feature-card {
+    height: 100%;
+    border-top: 6px solid var(--primary-color); /* 加粗边框 */
+    border: 2px solid var(--border-color);
+}
+
+.feature-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.4rem;
+    margin: 1.25rem 0 0;
+    color: var(--text-primary);
+}
+
+.feature-text {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+    font-size: 1.05rem;
+}
+
+.feature-tag {
+    display: inline-block;
+    padding: 0.35rem 1rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(42, 123, 255, 0.3);
+}
+
+/* 响应式调整 - 增强移动端对比度 */
+@media (max-width: 768px) {
+    body {
+        padding-top: 70px;
+    }
+    
+    .jumbotron-custom {
+        padding: 3rem 1.5rem;
+    }
+    
+    .jumbotron-custom .display-4 {
+        font-size: 2.2rem;
+    }
+    
+    .jumbotron-custom .lead {
+        font-size: 1.15rem;
+    }
+    
+    .page-header {
+        padding: 1.5rem;
+    }
+    
+    .page-title {
+        font-size: 1.8rem;
+    }
+    
+    .profile-card-icon {
+        width: 100px;
+        height: 100px;
+        font-size: 3rem;
+    }
+    
+    .profile-card-title {
+        font-size: 1.75rem;
+    }
+    
+    .nav-label {
+        font-weight: 600;
+    }
+}
+
+/* 新增：增强已登录用户的欢迎信息 */
+#userSection .welcome-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.1), rgba(255, 90, 140, 0.1));
+    border-radius: var(--border-radius);
+    border: 2px solid var(--border-color);
+}
+
+#userSection .welcome-user span {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+/* 新增：增强主页欢迎卡片 */
+.welcome-card {
+    display: flex;
+    align-items: center;
+    gap: 1.75rem;
+    background: linear-gradient(135deg, rgba(255, 193, 69, 0.15), rgba(255, 90, 140, 0.15));
+    padding: 2rem;
+    border-radius: var(--border-radius-lg);
+    margin-top: 2.5rem;
+    border: 2px solid var(--accent-color);
+    box-shadow: 0 10px 25px rgba(255, 193, 69, 0.2);
+}
+
+.welcome-card-icon {
+    width: 70px;
+    height: 70px;
+    min-width: 70px;
+    background: linear-gradient(135deg, var(--accent-color), var(--warning-color));
+    border-radius: var(--border-radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 2rem;
+    box-shadow: 0 6px 18px rgba(255, 193, 69, 0.4);
+}
+
+.welcome-card-content h3 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+}
+
+.welcome-card-content p {
+    color: var(--text-secondary);
+    margin-bottom: 0;
+    line-height: 1.6;
+    font-size: 1.05rem;
+}
+
+/* 增强全局消息 */
+#global-message {
+    border-radius: var(--border-radius);
+    border: 2px solid;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+    padding: 1.25rem 1.5rem;
+    min-width: 350px;
+}
+
+#global-message.alert-success {
+    border-color: var(--success-color);
+    background: linear-gradient(135deg, rgba(56, 185, 130, 0.1), rgba(255, 255, 255, 0.95));
+    color: var(--success-color);
+}
+
+#global-message.alert-danger {
+    border-color: var(--danger-color);
+    background: linear-gradient(135deg, rgba(255, 77, 109, 0.1), rgba(255, 255, 255, 0.95));
+    color: var(--danger-color);
+}
+
+#global-message.alert-warning {
+    border-color: var(--warning-color);
+    background: linear-gradient(135deg, rgba(255, 122, 69, 0.1), rgba(255, 255, 255, 0.95));
+    color: var(--warning-color);
+}
+
+/* 增强代码块和Markdown内容 */
+.markdown-content {
+    line-height: 1.8;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+}
+
+.markdown-content h1 {
+    font-size: 2.2rem;
+    border-bottom: 4px solid var(--primary-color);
+    padding-bottom: 0.75rem;
+    margin-top: 2rem;
+}
+
+.markdown-content h2 {
+    font-size: 1.9rem;
+    border-left: 6px solid var(--secondary-color);
+    padding-left: 1.25rem;
+    margin-top: 1.8rem;
+}
+
+.markdown-content pre {
+    background: linear-gradient(135deg, #1A2540, #2C3E66);
+    border-radius: 12px;
+    padding: 1.5rem;
+    overflow-x: auto;
+    margin: 2rem 0;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+/* 增强分页 */
+.pagination-custom .page-link-custom {
+    min-width: 45px;
+    height: 45px;
+    border: 2px solid var(--border-color);
+    font-weight: 700;
+}
+
+.pagination-custom .page-link-custom:hover {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px var(--shadow-color);
+}
+
+.pagination-custom .active .page-link-custom {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    border-color: var(--primary-color);
+    box-shadow: 0 6px 15px rgba(42, 123, 255, 0.3);
+}
+
+/* 增强编辑器 */
+.editor-container {
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    background: white;
+    box-shadow: 0 4px 15px rgba(42, 123, 255, 0.1);
+}
+
+.editor-toolbar {
+    background: linear-gradient(135deg, #f0f4ff, #ffffff);
+    border-bottom: 2px solid var(--border-color);
+    padding: 1rem 1.25rem;
+}
+
+.editor-tool {
+    width: 40px;
+    height: 40px;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    background: white;
+    color: var(--text-primary);
+    font-weight: 600;
+    transition: var(--transition);
+}
+
+.editor-tool:hover {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-3px);
+    box-shadow: 0 6px 15px var(--shadow-color);
+}
+
+/* 增强搜索框 */
+.search-card {
+    border: 2px solid var(--border-color);
+}
+
+.search-card-header {
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.1), rgba(90, 155, 255, 0.1));
+    padding: 1.25rem 1.75rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    font-size: 1.2rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* 增强徽章 */
+.badge-custom {
+    display: inline-block;
+    padding: 0.35rem 0.85rem;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.badge-custom.bg-primary {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+}
+
+.badge-custom.bg-secondary {
+    background: linear-gradient(135deg, var(--secondary-color), var(--secondary-dark));
+    color: white;
+}
+
+/* 增强滚动条 */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(240, 244, 255, 0.8);
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));
+    border-radius: 6px;
+    border: 3px solid rgba(240, 244, 255, 0.8);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, var(--primary-dark), var(--secondary-dark));
+}
+
+/* 增强加载动画 */
+.spinner-custom {
+    width: 70px;
+    height: 70px;
+}
+
+.spinner-circle {
+    border-width: 5px;
+    border-top-color: var(--primary-color);
+    border-right-color: var(--secondary-color);
+    border-bottom-color: var(--accent-color);
+}
+
+.loading-text {
+    color: var(--text-secondary);
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-top: 1rem;
+}
+
+/* 增强文章统计数据 */
+.post-stats {
+    display: flex;
+    gap: 2rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.post-stats i {
+    margin-right: 0.5rem;
+    font-size: 1.1rem;
+}
+
+/* 增强表单反馈 */
+.form-feedback {
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--border-radius-sm);
+    font-weight: 500;
+}
+
+.form-feedback .text-success {
+    color: var(--success-color);
+    background: rgba(56, 185, 130, 0.15);
+}
+
+.form-feedback .text-danger {
+    color: var(--danger-color);
+    background: rgba(255, 77, 109, 0.15);
+}
+
+.form-feedback .text-warning {
+    color: var(--warning-color);
+    background: rgba(255, 122, 69, 0.15);
+}
+
+/* 增强表单组间距 */
+.form-group-custom {
+    margin-bottom: 1.75rem;
+}
+
+/* 增强无内容提示 */
+.no-comments {
+    text-align: center;
+    padding: 4rem 0;
+}
+
+.no-comments-icon {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 1.5rem;
+    background: linear-gradient(135deg, #f8faff, #ffffff);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 2.5rem;
+    border: 2px solid var(--border-color);
+}
+
+.no-comments-text {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+/* 增强按钮组 */
+.btn-group-custom {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.btn-group-custom .btn-custom {
+    padding: 0.6rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+/* 增强表单标题 */
+.form-card-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.9rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.form-card-subtitle {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+/* 增强输入图标 */
+.input-icon {
+    position: absolute;
+    left: 1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--primary-color);
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+/* 增强表格悬停效果 */
+.table-custom tbody tr {
+    transition: var(--transition);
+}
+
+.table-custom tbody tr:hover {
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.08), rgba(255, 90, 140, 0.08));
+    transform: translateX(5px);
+}
+
+/* 增强页脚统计 */
+.footer-stats {
+    color: rgba(255, 255, 255, 0.95);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.footer-stats .badge-custom {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    padding: 0.35rem 1rem;
+    font-size: 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* 新增：增强页面切换动画 */
+@keyframes pageFadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(30px) scale(0.96); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0) scale(1); 
+    }
+}
+
+.page {
+    display: none;
+    animation: pageFadeIn 0.5s ease-out;
+    position: relative;
+    z-index: 1;
+}
+
+.page.active {
+    display: block;
+}

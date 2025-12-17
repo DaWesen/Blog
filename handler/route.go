@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"net/http"
+	"time"
+
 	categoryservice "blog/service/CategoryService"
 	commentservice "blog/service/CommentService"
 	postservice "blog/service/PostService"
@@ -10,7 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SetupRouter 设置路由
 // SetupRouter 设置路由
 func SetupRouter(
 	userService userservice.UserService,
@@ -46,15 +48,31 @@ func SetupRouter(
 		c.Status(204) // No Content
 	})
 
+	// 健康检查接口
+	router.GET("/api/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+	})
+
+	// API版本信息
+	router.GET("/api/version", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"version": "1.0.0",
+			"name":    "博客系统API",
+		})
+	})
+
 	// 初始化Handler
 	userHandler := NewUserHandler(userService)
 	postHandler := NewPostHandler(postService)
 	categoryHandler := NewCategoryHandler(categoryService)
 	commentHandler := NewCommentHandler(commentService)
+
 	// 公共路由（无需认证）
 	public := router.Group("/api")
 	{
-
 		// 用户相关路由
 		userGroup := public.Group("/")
 		{
@@ -63,6 +81,15 @@ func SetupRouter(
 			userGroup.GET("/check-username", userHandler.CheckUsernameExists)
 			userGroup.GET("/check-email", userHandler.CheckEmailExists)
 			userGroup.GET("/users/:username", userHandler.GetUserPublicProfile)
+
+			// 添加统计接口
+			userGroup.GET("/stats/users/count", func(c *gin.Context) {
+				// 这里可以调用统计服务，暂时返回一个固定值
+				c.JSON(200, gin.H{
+					"count":   0,
+					"message": "用户统计功能待实现",
+				})
+			})
 		}
 
 		// 文章相关路由
@@ -90,6 +117,19 @@ func SetupRouter(
 			categoryGroup.GET("/slug/:slug", categoryHandler.GetCategoryBySlug)
 			categoryGroup.GET("/search", categoryHandler.SearchCategories)
 			categoryGroup.GET("/:id", categoryHandler.GetCategory)
+
+			// 添加纯数组格式的接口
+			categoryGroup.GET("/all", func(c *gin.Context) {
+				// 直接调用service获取所有分类
+				categories, _, err := categoryService.ListCategories(c.Request.Context(), 1, 1000)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取分类失败", "details": err.Error()})
+					return
+				}
+
+				// 直接返回分类数组，不包含分页信息
+				c.JSON(http.StatusOK, categories)
+			})
 		}
 
 		// 评论相关路由

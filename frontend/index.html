@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基沃托斯学园博客</title>
+    <!-- 蔚蓝档案风格字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="style.css">
+    <!-- 添加蔚蓝档案风格图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- 顶部装饰条 -->
+    <div class="top-decoration">
+        <div class="decoration-circle circle-1"></div>
+        <div class="decoration-circle circle-2"></div>
+        <div class="decoration-circle circle-3"></div>
+        <div class="decoration-circle circle-4"></div>
+    </div>
+
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-custom fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="#" onclick="showHome()">
+                <div class="logo-container">
+                    <div class="logo-icon">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                    <span class="logo-text">基沃托斯学园博客</span>
+                </div>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showHome()">
+                            <div class="nav-icon"><i class="fas fa-home"></i></div>
+                            <div class="nav-label">首页</div>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPosts()">
+                            <div class="nav-icon"><i class="fas fa-newspaper"></i></div>
+                            <div class="nav-label">文章</div>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showCategories()">
+                            <div class="nav-icon"><i class="fas fa-tags"></i></div>
+                            <div class="nav-label">分类</div>
+                        </a>
+                    </li>
+                </ul>
+                <div id="userSection">
+                    <!-- 登录后会动态显示用户信息 -->
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要内容区 -->
+    <div class="container mt-5 pt-4">
+        <!-- 背景装饰元素 -->
+        <div class="background-decoration">
+            <div class="bg-circle bg-circle-1"></div>
+            <div class="bg-circle bg-circle-2"></div>
+            <div class="bg-circle bg-circle-3"></div>
+            <div class="bg-cloud bg-cloud-1"></div>
+            <div class="bg-cloud bg-cloud-2"></div>
+        </div>
+
+        <!-- 首页 -->
+        <div id="homePage" class="page active">
+            <div class="jumbotron-custom">
+                <div class="jumbotron-header">
+                    <div class="jumbotron-icon">
+                        <i class="fas fa-graduation-cap"></i>
+                    </div>
+                    <h1 class="display-4">欢迎来到基沃托斯学园</h1>
+                    <p class="lead">专为学园生活设计的博客系统，记录每一天的成长与故事。</p>
+                </div>
+                <div class="jumbotron-body">
+                    <div class="welcome-card">
+                        <div class="welcome-card-icon">
+                            <i class="fas fa-comments"></i>
+                        </div>
+                        <div class="welcome-card-content">
+                            <h3>分享你的学园生活</h3>
+                            <p>记录课堂笔记、社团活动、日常趣事，与朋友们分享美好时光。</p>
+                        </div>
+                    </div>
+                    <div id="homeActions" class="mt-5">
+                        <!-- 动态显示登录/注册按钮或用户信息 -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-5">
+                <div class="col-md-4 mb-4">
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon">
+                                <i class="fas fa-pen-fancy"></i>
+                            </div>
+                            <h5 class="feature-title">文章发布</h5>
+                        </div>
+                        <div class="feature-card-body">
+                            <p class="feature-text">支持Markdown格式，实时预览，轻松发布课堂笔记、社团报告。</p>
+                            <div class="feature-tag">便利笔记</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon">
+                                <i class="fas fa-heart"></i>
+                            </div>
+                            <h5 class="feature-title">互动交流</h5>
+                        </div>
+                        <div class="feature-card-body">
+                            <p class="feature-text">同学间可互相评论、点赞，支持回复功能，促进友好交流。</p>
+                            <div class="feature-tag">友谊加深</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon">
+                                <i class="fas fa-user-friends"></i>
+                            </div>
+                            <h5 class="feature-title">学园社区</h5>
+                        </div>
+                        <div class="feature-card-body">
+                            <p class="feature-text">专为学园生活设计，界面清新可爱，操作简单直观。</p>
+                            <div class="feature-tag">温馨社区</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 登录页面 -->
+        <div id="loginPage" class="page d-none">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="form-card">
+                        <div class="form-card-header">
+                            <div class="form-card-icon">
+                                <i class="fas fa-sign-in-alt"></i>
+                            </div>
+                            <h4 class="form-card-title">学园登录</h4>
+                            <p class="form-card-subtitle">欢迎回到基沃托斯学园</p>
+                        </div>
+                        <div class="form-card-body">
+                            <form id="loginForm">
+                                <div class="form-group-custom">
+                                    <label for="loginUsername" class="form-label">
+                                        <i class="fas fa-user"></i> 用户名或邮箱
+                                    </label>
+                                    <div class="input-with-icon">
+                                        <input type="text" class="form-control" id="loginUsername" required>
+                                        <div class="input-icon">
+                                            <i class="fas fa-user-circle"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group-custom">
+                                    <label for="loginPassword" class="form-label">
+                                        <i class="fas fa-lock"></i> 密码
+                                    </label>
+                                    <div class="input-with-icon">
+                                        <input type="password" class="form-control" id="loginPassword" required>
+                                        <div class="input-icon">
+                                            <i class="fas fa-key"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn-custom btn-primary-custom">
+                                        <i class="fas fa-sign-in-alt"></i> 登录学园
+                                    </button>
+                                    <button type="button" class="btn-custom btn-outline-custom" onclick="showHome()">
+                                        <i class="fas fa-home"></i> 返回首页
+                                    </button>
+                                </div>
+                            </form>
+                            <div class="form-footer">
+                                <p>还没有学园账号？ <a href="#" onclick="showRegister()">点击注册</a></p>
+                            </div>
+                            <div id="loginMessage" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 注册页面 -->
+        <div id="registerPage" class="page d-none">
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="form-card">
+                        <div class="form-card-header">
+                            <div class="form-card-icon">
+                                <i class="fas fa-user-plus"></i>
+                            </div>
+                            <h4 class="form-card-title">加入学园</h4>
+                            <p class="form-card-subtitle">成为基沃托斯学园的一员</p>
+                        </div>
+                        <div class="form-card-body">
+                            <form id="registerForm">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-group-custom">
+                                            <label for="registerUsername" class="form-label">
+                                                <i class="fas fa-id-card"></i> 用户名 *
+                                            </label>
+                                            <div class="input-with-icon">
+                                                <input type="text" class="form-control" id="registerUsername" 
+                                                       required minlength="2" maxlength="50"
+                                                       oninput="checkUsername(this.value)">
+                                                <div class="input-icon">
+                                                    <i class="fas fa-user-edit"></i>
+                                                </div>
+                                            </div>
+                                            <div class="form-text">2-50个字符，支持中文</div>
+                                            <div id="usernameFeedback" class="form-feedback"></div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-group-custom">
+                                            <label for="registerEmail" class="form-label">
+                                                <i class="fas fa-envelope"></i> 邮箱 *
+                                            </label>
+                                            <div class="input-with-icon">
+                                                <input type="email" class="form-control" id="registerEmail" 
+                                                       required oninput="checkEmail(this.value)">
+                                                <div class="input-icon">
+                                                    <i class="fas fa-at"></i>
+                                                </div>
+                                            </div>
+                                            <div id="emailFeedback" class="form-feedback"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-group-custom">
+                                            <label for="registerPassword" class="form-label">
+                                                <i class="fas fa-lock"></i> 密码 *
+                                            </label>
+                                            <div class="input-with-icon">
+                                                <input type="password" class="form-control" id="registerPassword" 
+                                                       required minlength="6">
+                                                <div class="input-icon">
+                                                    <i class="fas fa-shield-alt"></i>
+                                                </div>
+                                            </div>
+                                            <div class="form-text">至少6位字符</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-group-custom">
+                                            <label for="registerBio" class="form-label">
+                                                <i class="fas fa-comment-dots"></i> 个人介绍
+                                            </label>
+                                            <div class="input-with-icon">
+                                                <textarea class="form-control" id="registerBio" rows="2" 
+                                                          maxlength="500" placeholder="介绍一下自己吧..."></textarea>
+                                                <div class="input-icon">
+                                                    <i class="fas fa-pen"></i>
+                                                </div>
+                                            </div>
+                                            <div class="form-text">最多500字</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn-custom btn-success-custom">
+                                        <i class="fas fa-user-check"></i> 注册加入
+                                    </button>
+                                    <button type="button" class="btn-custom btn-outline-custom" onclick="showLogin()">
+                                        <i class="fas fa-sign-in-alt"></i> 已有账号
+                                    </button>
+                                </div>
+                            </form>
+                            <div id="registerMessage" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文章列表页面 -->
+        <div id="postsPage" class="page d-none">
+            <div class="page-header">
+                <div class="page-header-icon">
+                    <i class="fas fa-newspaper"></i>
+                </div>
+                <div class="page-header-content">
+                    <h2 class="page-title">文章列表</h2>
+                    <p class="page-subtitle">浏览学园里的所有文章</p>
+                </div>
+                <button class="btn-custom btn-primary-custom" onclick="showCreatePost()">
+                    <i class="fas fa-plus-circle"></i> 写文章
+                </button>
+            </div>
+            
+            <!-- 搜索和过滤 -->
+            <div class="search-card">
+                <div class="search-card-header">
+                    <i class="fas fa-search"></i> 搜索文章
+                </div>
+                <div class="search-card-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <div class="input-with-icon">
+                                <input type="text" class="form-control" id="searchKeyword" 
+                                       placeholder="搜索文章标题或内容..." onkeyup="debouncedSearch()">
+                                <div class="input-icon">
+                                    <i class="fas fa-search"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select form-select-custom" id="categoryFilter" onchange="loadPosts()">
+                                <option value="">全部分类</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 文章列表 -->
+            <div id="postsContainer">
+                <div class="loading-container">
+                    <div class="spinner-custom">
+                        <div class="spinner-circle"></div>
+                    </div>
+                    <p class="loading-text">正在加载文章...</p>
+                </div>
+            </div>
+            
+            <!-- 分页 -->
+            <nav id="postsPagination" class="mt-4 d-none">
+                <ul class="pagination-custom justify-content-center">
+                </ul>
+            </nav>
+        </div>
+
+        <!-- 创建/编辑文章页面 -->
+        <div id="editPostPage" class="page d-none">
+            <div class="page-header">
+                <div class="page-header-icon">
+                    <i class="fas fa-pen-fancy"></i>
+                </div>
+                <div class="page-header-content">
+                    <h2 class="page-title" id="editPostTitle">写文章</h2>
+                    <p class="page-subtitle">分享你的学园故事</p>
+                </div>
+                <button class="btn-custom btn-outline-custom" onclick="showPosts()">
+                    <i class="fas fa-arrow-left"></i> 返回
+                </button>
+            </div>
+            
+            <div class="form-card">
+                <div class="form-card-body">
+                    <form id="postForm">
+                        <input type="hidden" id="postId">
+                        
+                        <div class="row">
+                            <div class="col-md-8 mb-3">
+                                <div class="form-group-custom">
+                                    <label for="postTitle" class="form-label">
+                                        <i class="fas fa-heading"></i> 标题 *
+                                    </label>
+                                    <div class="input-with-icon">
+                                        <input type="text" class="form-control" id="postTitle" required maxlength="255">
+                                        <div class="input-icon">
+                                            <i class="fas fa-pen"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="form-group-custom">
+                                    <label for="postCategory" class="form-label">
+                                        <i class="fas fa-tag"></i> 分类 *
+                                    </label>
+                                    <select class="form-select form-select-custom" id="postCategory" required>
+                                        <option value="">请选择分类</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="postContent" class="form-label">
+                                <i class="fas fa-edit"></i> 内容 *
+                            </label>
+                            <div class="editor-container">
+                                <div class="editor-toolbar">
+                                    <div class="editor-tools">
+                                        <button type="button" class="editor-tool" onclick="insertText('**粗体**')" title="粗体">
+                                            <i class="fas fa-bold"></i>
+                                        </button>
+                                        <button type="button" class="editor-tool" onclick="insertText('*斜体*')" title="斜体">
+                                            <i class="fas fa-italic"></i>
+                                        </button>
+                                        <button type="button" class="editor-tool" onclick="insertText('[链接文字](URL)')" title="链接">
+                                            <i class="fas fa-link"></i>
+                                        </button>
+                                        <button type="button" class="editor-tool" onclick="insertText('![图片描述](URL)')" title="图片">
+                                            <i class="fas fa-image"></i>
+                                        </button>
+                                        <button type="button" class="editor-tool" onclick="insertText('```\n代码块\n```')" title="代码块">
+                                            <i class="fas fa-code"></i>
+                                        </button>
+                                        <button type="button" class="editor-tool" onclick="insertText('> 引用')" title="引用">
+                                            <i class="fas fa-quote-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea class="form-control editor-textarea" id="postContent" 
+                                          rows="15" required placeholder="支持Markdown语法..."></textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-group-custom">
+                                <label for="postSummary" class="form-label">
+                                    <i class="fas fa-file-alt"></i> 摘要
+                                </label>
+                                <div class="input-with-icon">
+                                    <textarea class="form-control" id="postSummary" rows="3" 
+                                              maxlength="500" placeholder="不填写则自动生成前200字作为摘要"></textarea>
+                                    <div class="input-icon">
+                                        <i class="fas fa-sticky-note"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button type="button" class="btn-custom btn-secondary-custom me-md-2" onclick="showPosts()">
+                                <i class="fas fa-times"></i> 取消
+                            </button>
+                            <button type="submit" class="btn-custom btn-primary-custom" id="postSubmitBtn">
+                                <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+                                <i class="fas fa-paper-plane"></i> 发布文章
+                            </button>
+                        </div>
+                    </form>
+                    <div id="postMessage" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文章详情页面 -->
+        <div id="postDetailPage" class="page d-none">
+            <div class="page-header">
+                <button class="btn-custom btn-outline-custom" onclick="showPosts()">
+                    <i class="fas fa-arrow-left"></i> 返回列表
+                </button>
+                <div id="postActions" class="btn-group-custom">
+                    <!-- 编辑和删除按钮（作者可见） -->
+                </div>
+            </div>
+            
+            <div class="post-detail-card">
+                <div class="post-detail-header">
+                    <!-- 文章标题会动态加载到这里 -->
+                </div>
+                <div class="post-detail-body">
+                    <!-- 文章内容会动态加载到这里 -->
+                </div>
+            </div>
+            
+            <!-- 评论区域 -->
+            <div class="comment-section mt-4">
+                <div class="comment-section-header">
+                    <div class="comment-section-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <h3 class="comment-section-title">评论</h3>
+                </div>
+                <div class="comment-section-body">
+                    <form id="commentForm" class="mb-4">
+                        <div class="comment-form">
+                            <div class="comment-form-header">
+                                <i class="fas fa-comment-dots"></i> 发表评论
+                            </div>
+                            <div class="comment-form-body">
+                                <textarea class="form-control" id="commentContent" rows="3" 
+                                          placeholder="写下你的评论..." required></textarea>
+                                <div class="comment-form-footer">
+                                    <button type="submit" class="btn-custom btn-primary-custom">
+                                        <i class="fas fa-paper-plane"></i> 发表评论
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="commentsContainer">
+                        <div class="no-comments">
+                            <div class="no-comments-icon">
+                                <i class="fas fa-comment-slash"></i>
+                            </div>
+                            <p class="no-comments-text">暂无评论，快来抢沙发吧！</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分类管理页面 -->
+        <div id="categoriesPage" class="page d-none">
+            <div class="page-header">
+                <div class="page-header-icon">
+                    <i class="fas fa-tags"></i>
+                </div>
+                <div class="page-header-content">
+                    <h2 class="page-title">分类管理</h2>
+                    <p class="page-subtitle">管理文章分类</p>
+                </div>
+                <button class="btn-custom btn-success-custom" onclick="showCreateCategory()">
+                    <i class="fas fa-plus-circle"></i> 新建分类
+                </button>
+            </div>
+            
+            <div class="table-card">
+                <div class="table-card-body">
+                    <div class="table-responsive">
+                        <table class="table table-custom">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-hashtag"></i> ID</th>
+                                    <th><i class="fas fa-tag"></i> 分类名称</th>
+                                    <th><i class="fas fa-link"></i> 别名</th>
+                                    <th><i class="fas fa-file-alt"></i> 文章数</th>
+                                    <th><i class="fas fa-calendar-alt"></i> 创建时间</th>
+                                    <th><i class="fas fa-cogs"></i> 操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="categoriesTable">
+                                <!-- 分类数据会动态加载到这里 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 创建/编辑分类页面 -->
+        <div id="editCategoryPage" class="page d-none">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="form-card">
+                        <div class="form-card-header">
+                            <div class="form-card-icon">
+                                <i class="fas fa-tag"></i>
+                            </div>
+                            <h4 class="form-card-title" id="editCategoryTitle">新建分类</h4>
+                            <p class="form-card-subtitle">创建新的文章分类</p>
+                        </div>
+                        <div class="form-card-body">
+                            <form id="categoryForm">
+                                <input type="hidden" id="categoryId">
+                                
+                                <div class="mb-3">
+                                    <div class="form-group-custom">
+                                        <label for="categoryName" class="form-label">
+                                            <i class="fas fa-tag"></i> 分类名称 *
+                                        </label>
+                                        <div class="input-with-icon">
+                                            <input type="text" class="form-control" id="categoryName" 
+                                                   required maxlength="100">
+                                            <div class="input-icon">
+                                                <i class="fas fa-edit"></i>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="form-group-custom">
+                                        <label for="categorySlug" class="form-label">
+                                            <i class="fas fa-link"></i> 别名
+                                        </label>
+                                        <div class="input-with-icon">
+                                            <input type="text" class="form-control" id="categorySlug" 
+                                                   maxlength="100" placeholder="用于URL，不填则自动生成">
+                                            <div class="input-icon">
+                                                <i class="fas fa-code"></i>
+                                            </div>
+                                        </div>
+                                        <div class="form-text">英文小写，用-连接，如: technical-article</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                    <button type="button" class="btn-custom btn-secondary-custom me-md-2" 
+                                            onclick="showCategories()">
+                                        <i class="fas fa-times"></i> 取消
+                                    </button>
+                                    <button type="submit" class="btn-custom btn-success-custom" id="categorySubmitBtn">
+                                        <i class="fas fa-save"></i> 保存分类
+                                    </button>
+                                </div>
+                            </form>
+                            <div id="categoryMessage" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户管理页面 -->
+        <div id="profilePage" class="page d-none">
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="profile-card">
+                        <div class="profile-card-header">
+                            <div class="profile-card-icon">
+                                <i class="fas fa-user-circle"></i>
+                            </div>
+                            <h4 class="profile-card-title">个人资料</h4>
+                            <p class="profile-card-subtitle">管理你的学园信息</p>
+                        </div>
+                        <div class="profile-card-body">
+                            <!-- 内容将由 JavaScript 动态加载 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部信息 -->
+    <footer class="footer-custom">
+        <div class="footer-wave"></div>
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="footer-logo">
+                        <i class="fas fa-book-open"></i>
+                        <h5>基沃托斯学园博客</h5>
+                    </div>
+                    <p class="footer-text">记录学园生活的每一刻美好时光</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <div class="footer-info">
+                        <p class="footer-version">© 2025 基沃托斯学园. 基于 Go + Gin + SQLite 构建.</p>
+                        <p class="footer-stats">当前版本: v1.0.0 | 学员数: <span id="userCount" class="badge-custom">0</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Markdown解析库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- 前端模块 -->
+    <script src="utils.js"></script>
+    <script src="auth.js"></script>
+    <script src="post.js"></script>
+    <script src="category.js"></script>
+    <script src="comment.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

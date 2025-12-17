@@ -92,7 +92,16 @@ func (s *categoryService) CreateCategory(ctx context.Context, req *CreateCategor
 		slug = utils.GenerateSlug(name)
 	}
 
-	// 4. 使用分布式锁检查分类是否已存在
+	// 4. 清除可能存在的缓存残留
+	s.categoryCacheLock.Lock()
+	delete(s.categoryCache, 0) // 清除可能存在的无效条目
+	s.categoryCacheLock.Unlock()
+
+	s.slugLock.Lock()
+	delete(s.slugToID, slug) // 清除该slug的缓存映射
+	s.slugLock.Unlock()
+
+	// 5. 使用分布式锁检查分类是否已存在
 	slugLockKey := fmt.Sprintf("category_slug:%s", slug)
 	nameLockKey := fmt.Sprintf("category_name:%s", name)
 
@@ -101,27 +110,25 @@ func (s *categoryService) CreateCategory(ctx context.Context, req *CreateCategor
 	// 同时获取两个锁
 	err := s.lockManager.GetLock(slugLockKey, 5*time.Second).Mutex(ctx, func() error {
 		return s.lockManager.GetLock(nameLockKey, 5*time.Second).Mutex(ctx, func() error {
-			// 检查slug是否已存在
-			s.slugLock.RLock()
-			if categoryID, ok := s.slugToID[slug]; ok {
-				s.slugLock.RUnlock()
-				cachedCategory, _ := s.getCachedCategory(ctx, categoryID)
-				if cachedCategory != nil {
-					return ErrCategoryExists
+			// 重新从数据库检查，忽略缓存
+			existingBySlug, err := s.categorySQL.GetCategoryBySlug(ctx, slug)
+			if err != nil {
+				// 如果是"record not found"错误，说明slug不存在，这是正常情况
+				if err.Error() == "record not found" || strings.Contains(err.Error(), "not found") {
+					// 继续检查name
+				} else {
+					return fmt.Errorf("检查分类slug失败: %w", err)
 				}
-			} else {
-				s.slugLock.RUnlock()
+			} else if existingBySlug != nil {
+				return ErrCategoryExists
 			}
 
-			// 从数据库检查
-			existing, _ := s.categorySQL.GetCategoryBySlug(ctx, slug)
-			if existing != nil {
-				// 更新缓存
-				s.slugLock.Lock()
-				s.slugToID[slug] = existing.ID
-				s.slugLock.Unlock()
-				s.cacheCategory(existing)
-
+			// 检查name是否已存在
+			existingByName, err := s.categorySQL.FindCategories(ctx, "name = ?", name)
+			if err != nil {
+				return fmt.Errorf("检查分类name失败: %w", err)
+			}
+			if len(existingByName) > 0 {
 				return ErrCategoryExists
 			}
 
@@ -136,11 +143,16 @@ func (s *categoryService) CreateCategory(ctx context.Context, req *CreateCategor
 			// 6. 保存到数据库
 			if err := s.categorySQL.InsertCategory(ctx, category); err != nil {
 				if strings.Contains(err.Error(), "Duplicate entry") {
-					// 快速重新检查
-					existing, _ := s.categorySQL.GetCategoryBySlug(ctx, slug)
-					if existing != nil {
+					// 如果是唯一约束冲突，从数据库重新检查
+					existingBySlug, _ := s.categorySQL.GetCategoryBySlug(ctx, slug)
+					if existingBySlug != nil {
 						return ErrCategoryExists
 					}
+					existingByName, _ := s.categorySQL.FindCategories(ctx, "name = ?", name)
+					if len(existingByName) > 0 {
+						return ErrCategoryExists
+					}
+					return fmt.Errorf("未知的唯一约束冲突: %w", err)
 				}
 				return fmt.Errorf("创建分类失败: %w", err)
 			}

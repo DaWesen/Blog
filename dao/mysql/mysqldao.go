@@ -3,6 +3,7 @@ package dao
 import (
 	"blog/model"
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 )
@@ -96,16 +97,30 @@ func (d *userSQL) GetUserByID(ctx context.Context, id uint) (*model.User, error)
 	return &u, err
 }
 
-func (d *userSQL) GetUserByName(ctx context.Context, name string) (*model.User, error) {
-	var u model.User
-	err := d.db.WithContext(ctx).Where("name = ?", name).First(&u).Error
-	return &u, err
-}
-
 func (d *userSQL) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	var u model.User
 	err := d.db.WithContext(ctx).Where("email = ?", email).First(&u).Error
-	return &u, err
+	// 如果是"记录不存在"错误，返回nil
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (d *userSQL) GetUserByName(ctx context.Context, name string) (*model.User, error) {
+	var u model.User
+	err := d.db.WithContext(ctx).Where("name = ?", name).First(&u).Error
+	// 如果是"记录不存在"错误，返回nil
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 func (d *userSQL) UpdateUser(ctx context.Context, id uint, updates map[string]any) error {
 	return d.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error
@@ -164,10 +179,21 @@ func (d *postSQL) GetPostByID(ctx context.Context, id uint) (*model.Post, error)
 	return &p, err
 }
 
+// 帖子 - GetPostBySlug
 func (d *postSQL) GetPostBySlug(ctx context.Context, slug string) (*model.Post, error) {
 	var p model.Post
 	err := d.db.WithContext(ctx).Where("slug = ?", slug).First(&p).Error
-	return &p, err
+
+	// 如果是记录不存在，返回nil和nil错误
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &p, nil
 }
 
 func (d *postSQL) UpdatePost(ctx context.Context, id uint, updates map[string]any) error {

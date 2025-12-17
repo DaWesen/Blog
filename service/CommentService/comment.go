@@ -406,10 +406,13 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 
 	offset := (page - 1) * size
 
-	// 帖子是否存在
+	// 检查帖子是否存在
 	post, err := s.postSQL.GetPostByID(ctx, postID)
 	if err != nil {
-		return nil, 0, ErrPostIsDeleted
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, ErrPostIsDeleted
+		}
+		return nil, 0, fmt.Errorf("获取帖子失败: %w", err)
 	}
 
 	condition := "post_id = ? AND parent_id IS NULL AND status = 'published'"
@@ -438,8 +441,17 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 		return nil, 0, fmt.Errorf("获取评论列表失败: %w", err)
 	}
 
+	// 如果没有评论，直接返回空数组
+	if len(comments) == 0 {
+		return []*model.Comment{}, total, nil
+	}
+
 	// 并行获取回复和点赞数
 	var wg sync.WaitGroup
+	// 用于收集错误
+	var mu sync.Mutex
+	var errorsList []error
+
 	for _, comment := range comments {
 		wg.Add(1)
 		go func(c *model.Comment) {
@@ -447,7 +459,7 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 
 			// 获取该评论的直接回复
 			var replies []*model.Comment
-			err = s.db.WithContext(ctx).
+			err := s.db.WithContext(ctx).
 				Preload("User", func(db *gorm.DB) *gorm.DB {
 					return db.Select("id, name, avatar_url")
 				}).
@@ -458,6 +470,10 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 
 			if err == nil && len(replies) > 0 {
 				c.Replies = replies
+			} else if err != nil {
+				mu.Lock()
+				errorsList = append(errorsList, fmt.Errorf("获取评论 %d 的回复失败: %w", c.ID, err))
+				mu.Unlock()
 			}
 
 			// 获取评论点赞数
@@ -468,11 +484,23 @@ func (s *commentService) ListCommentsByPost(ctx context.Context, postID uint, pa
 				dbLikeCount, err := s.commentLikeSQL.CommentFindLikes(ctx, "comment_id = ?", c.ID)
 				if err == nil {
 					c.LikeCount = uint(len(dbLikeCount))
+				} else {
+					mu.Lock()
+					errorsList = append(errorsList, fmt.Errorf("获取评论 %d 的点赞数失败: %w", c.ID, err))
+					mu.Unlock()
 				}
 			}
 		}(comment)
 	}
 	wg.Wait()
+
+	// 如果有错误，只记录日志，不中断流程
+	if len(errorsList) > 0 {
+		fmt.Printf("获取评论详情时出现以下错误（不影响主要流程）:\n")
+		for _, err := range errorsList {
+			fmt.Printf("  - %v\n", err)
+		}
+	}
 
 	return comments, total, nil
 }

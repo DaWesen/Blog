@@ -1,3 +1,4 @@
+// main.go 修改后
 package main
 
 import (
@@ -92,8 +93,13 @@ func main() {
 		rateLimiter,
 	)
 
-	// 9. 启动服务器
+	// 9. 添加静态文件服务
+	// 如果存在frontend文件夹，则提供静态文件服务
+	router.Static("/frontend", "./frontend")
+
+	// 10. 启动服务器
 	log.Printf("服务器启动在端口 %d", cfg.Server.Port)
+	log.Printf("前端地址: http://localhost:%d/frontend", cfg.Server.Port)
 	if err := router.Run(fmt.Sprintf(":%d", cfg.Server.Port)); err != nil {
 		log.Fatal("服务器启动失败:", err)
 	}

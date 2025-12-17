@@ -3,6 +3,8 @@ package handler
 import (
 	"blog/model"
 	categoryservice "blog/service/CategoryService"
+	"blog/utils"
+	"context"
 	"net/http"
 	"strconv"
 
@@ -34,8 +36,14 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "请求参数错误", Details: err.Error()})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	category, err := h.categoryService.CreateCategory(c.Request.Context(), &req)
+	category, err := h.categoryService.CreateCategory(ctx, &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == categoryservice.ErrCategoryExists {
@@ -97,8 +105,14 @@ func (h *CategoryHandler) UpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "请求参数错误", Details: err.Error()})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	category, err := h.categoryService.UpdateCategory(c.Request.Context(), uint(id), &req)
+	category, err := h.categoryService.UpdateCategory(ctx, uint(id), &req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err == categoryservice.ErrCategoryNotFound {
@@ -121,8 +135,14 @@ func (h *CategoryHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "无效的分类ID"})
 		return
 	}
+	currentUserID, err := utils.GetUserIDFromGin(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "用户未认证"})
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), "user_id", currentUserID)
 
-	err = h.categoryService.DeleteCategory(c.Request.Context(), uint(id))
+	err = h.categoryService.DeleteCategory(ctx, uint(id))
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
 		return
@@ -136,12 +156,22 @@ func (h *CategoryHandler) ListCategories(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
 
+	// 如果前端不需要分页信息，可以添加一个参数控制
+	noPagination := c.Query("no_pagination")
+
 	categories, total, err := h.categoryService.ListCategories(c.Request.Context(), page, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "获取分类列表失败"})
 		return
 	}
 
+	// 如果前端只需要数组，不需要分页信息
+	if noPagination == "true" {
+		c.JSON(http.StatusOK, categories)
+		return
+	}
+
+	// 返回包含分页信息的响应
 	c.JSON(http.StatusOK, ListCategoriesResponse{
 		Categories: categories,
 		Total:      total,

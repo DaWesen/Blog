@@ -232,7 +232,13 @@ func (s *userService) getCachedUser(ctx context.Context, userID uint) (*model.Us
 }
 
 // cacheUser 缓存用户信息
+// cacheUser 缓存用户信息
 func (s *userService) cacheUser(user *model.User) {
+	// 添加空指针检查
+	if user == nil || user.ID == 0 {
+		return
+	}
+
 	s.userCacheLock.Lock()
 	defer s.userCacheLock.Unlock()
 
@@ -241,7 +247,9 @@ func (s *userService) cacheUser(user *model.User) {
 
 	// 更新用户名映射
 	s.usernameLock.Lock()
-	s.usernameToID[user.Name] = user.ID
+	if user.Name != "" {
+		s.usernameToID[user.Name] = user.ID
+	}
 	s.usernameLock.Unlock()
 }
 
@@ -272,31 +280,20 @@ func (s *userService) Register(ctx context.Context, req *RegisterRequest) (*User
 	normalizedEmail := normalizeEmail(req.Email)
 	sanitizedUsername := sanitizeUsername(req.Username)
 
-	// 4. 使用分布式锁检查邮箱和用户名
-	emailLockKey := fmt.Sprintf("register_email:%s", normalizedEmail)
-	usernameLockKey := fmt.Sprintf("register_username:%s", sanitizedUsername)
-
-	// 同时获取两个锁，避免死锁
-	err := s.lockManager.GetLock(emailLockKey, 5*time.Second).Mutex(ctx, func() error {
-		return s.lockManager.GetLock(usernameLockKey, 5*time.Second).Mutex(ctx, func() error {
-			// 检查邮箱是否存在
-			existingUser, _ := s.userSQL.GetUserByEmail(ctx, normalizedEmail)
-			if existingUser != nil {
-				return ErrEmailExists
-			}
-
-			// 检查用户名是否存在
-			existingUser, _ = s.userSQL.GetUserByName(ctx, sanitizedUsername)
-			if existingUser != nil {
-				return ErrUsernameExists
-			}
-
-			return nil
-		})
-	})
-
+	existingUser, err := s.userSQL.GetUserByEmail(ctx, normalizedEmail)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("检查邮箱失败: %w", err)
+	}
+	if existingUser != nil {
+		return nil, ErrEmailExists
+	}
+
+	existingUser, err = s.userSQL.GetUserByName(ctx, sanitizedUsername)
+	if err != nil {
+		return nil, fmt.Errorf("检查用户名失败: %w", err)
+	}
+	if existingUser != nil {
+		return nil, ErrUsernameExists
 	}
 
 	// 5. 哈希密码
@@ -316,21 +313,20 @@ func (s *userService) Register(ctx context.Context, req *RegisterRequest) (*User
 		LoginAt:  time.Now(),
 	}
 
-	// 7. 保存到数据库（使用分布式锁保护）
 	registerLockKey := fmt.Sprintf("user_register:%s", sanitizedUsername)
 	err = s.lockManager.GetLock(registerLockKey, 10*time.Second).Mutex(ctx, func() error {
 		if err := s.userSQL.InsertUser(ctx, user); err != nil {
 			if strings.Contains(err.Error(), "Duplicate entry") || strings.Contains(err.Error(), "UNIQUE constraint") {
-				// 再次检查是哪一项重复了
+				// 快速重新检查
 				existingUser, _ := s.userSQL.GetUserByEmail(ctx, normalizedEmail)
 				if existingUser != nil {
 					return ErrEmailExists
 				}
-
 				existingUser, _ = s.userSQL.GetUserByName(ctx, sanitizedUsername)
 				if existingUser != nil {
 					return ErrUsernameExists
 				}
+				return fmt.Errorf("未知的唯一约束冲突: %w", err)
 			}
 			return fmt.Errorf("创建用户失败: %w", err)
 		}
@@ -536,6 +532,11 @@ func (s *userService) GetUserPublicProfile(ctx context.Context, username string)
 
 	// 清理用户名
 	sanitizedUsername := sanitizeUsername(username)
+
+	// 如果请求的是 "count"，返回404而不是尝试查询用户
+	if sanitizedUsername == "count" {
+		return nil, ErrUserNotFound
+	}
 
 	// 首先尝试从用户名映射获取用户ID
 	s.usernameLock.RLock()

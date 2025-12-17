@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -163,36 +165,76 @@ func NewPostService(
 	}
 }
 
-// getCurrentUser 从上下文中获取当前用户完整信息
+// getCurrentUser 从上下文中获取当前用户完整信息（修复版）
 func (s *postService) getCurrentUser(ctx context.Context) (*model.User, error) {
-	userID, err := utils.GetCurrentUserIDFromContext(ctx)
-	if err != nil {
-		return nil, err
+	// 调试信息：打印上下文内容
+	fmt.Printf("【调试getCurrentUser】开始从上下文获取用户...\n")
+
+	// 方法1：直接从标准 context 中获取 user_id（最高优先级）
+	if userIDValue := ctx.Value("user_id"); userIDValue != nil {
+		fmt.Printf("【调试】从ctx直接获取到user_id: %v (类型: %T)\n", userIDValue, userIDValue)
+
+		var userID uint
+		switch v := userIDValue.(type) {
+		case uint:
+			userID = v
+		case float64:
+			userID = uint(v)
+		case int:
+			userID = uint(v)
+		case string:
+			if id, err := strconv.ParseUint(v, 10, 32); err == nil {
+				userID = uint(id)
+			}
+		default:
+			fmt.Printf("【调试】user_id类型未知: %T\n", v)
+		}
+
+		if userID > 0 {
+			fmt.Printf("【调试】成功解析出userID: %d，开始查询数据库...\n", userID)
+			// 从数据库获取用户详细信息
+			user, err := s.userSQL.GetUserByID(ctx, userID)
+			if err != nil {
+				fmt.Printf("【调试】数据库查询失败: %v\n", err)
+				return nil, errors.New("用户不存在")
+			}
+			fmt.Printf("【调试】成功获取到用户: %s (ID: %d)\n", user.Name, user.ID)
+			return user, nil
+		}
 	}
 
-	// 使用分布式锁保护用户信息获取
-	lockKey := fmt.Sprintf("user_info:%d", userID)
-	lock := s.lockManager.GetLock(lockKey, 5*time.Second)
+	// 方法2：尝试从 ginContext 中获取（备用方案）
+	if ginCtxValue := ctx.Value("ginContext"); ginCtxValue != nil {
+		fmt.Printf("【调试】从ctx获取到ginContext\n")
+		if ginCtx, ok := ginCtxValue.(*gin.Context); ok {
+			// 使用 utils 包中专门为 Gin 设计的函数
+			userID, err := utils.GetUserIDFromGin(ginCtx)
+			if err != nil {
+				fmt.Printf("【调试】GetUserIDFromGin失败: %v\n", err)
+			} else {
+				fmt.Printf("【调试】从ginContext解析出userID: %d\n", userID)
+				user, err := s.userSQL.GetUserByID(ctx, userID)
+				if err != nil {
+					return nil, errors.New("用户不存在")
+				}
+				return user, nil
+			}
+		}
+	}
 
-	// 快速获取锁，避免阻塞
-	acquired, err := lock.Acquire(ctx)
-	if err != nil || !acquired {
-		// 如果获取锁失败，尝试直接查询（可能会有并发问题，但用户信息通常变化不大）
+	// 方法3：尝试使用 utils 包中的通用方法（兼容性方案）
+	userID, err := utils.GetCurrentUserIDFromContext(ctx)
+	if err == nil && userID > 0 {
+		fmt.Printf("【调试】GetCurrentUserIDFromContext成功: %d\n", userID)
 		user, err := s.userSQL.GetUserByID(ctx, userID)
 		if err != nil {
 			return nil, errors.New("用户不存在")
 		}
 		return user, nil
 	}
-	defer lock.Release(ctx)
 
-	// 从数据库获取用户详细信息
-	user, err := s.userSQL.GetUserByID(ctx, userID)
-	if err != nil {
-		return nil, errors.New("用户不存在")
-	}
-
-	return user, nil
+	fmt.Printf("【调试】所有方法都失败了，返回未认证错误\n")
+	return nil, errors.New("用户未认证")
 }
 
 // getPostWithAssociations 获取帖子及其关联数据（带缓存）
