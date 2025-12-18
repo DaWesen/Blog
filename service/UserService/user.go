@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -74,6 +76,10 @@ type UserService interface {
 	CheckUsernameExists(ctx context.Context, username string) (bool, error)
 	CheckEmailExists(ctx context.Context, email string) (bool, error)
 	GetUserByID(ctx context.Context, userID uint) (*model.User, error)
+	// 头像管理
+	UploadAvatar(ctx context.Context, userID uint, fileBytes []byte, fileName string) (string, error)
+	DeleteAvatar(ctx context.Context, userID uint) error
+	GetAvatarURL(ctx context.Context, userID uint) (string, error)
 }
 
 // 实现
@@ -91,6 +97,8 @@ type userService struct {
 	userCacheTTL  map[uint]time.Time
 	userCacheLock sync.RWMutex
 	readCacheLock sync.RWMutex
+	// 用户头像
+
 	// 用户名->用户ID映射（用于快速查找）
 	usernameToID map[string]uint
 	usernameLock sync.RWMutex
@@ -809,4 +817,160 @@ func (s *userService) GetUserByID(ctx context.Context, userID uint) (*model.User
 	}
 
 	return user, nil
+}
+
+// UploadAvatar 上传头像
+func (s *userService) UploadAvatar(ctx context.Context, userID uint, fileBytes []byte, fileName string) (string, error) {
+	// 1. 获取当前用户
+	user, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		return "", ErrUserNotFound
+	}
+
+	// 2. 验证文件类型（可选）
+	contentType := http.DetectContentType(fileBytes[:512])
+	allowedTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+	}
+
+	if !allowedTypes[contentType] {
+		return "", errors.New("不支持的图片格式，仅支持 JPEG、PNG、GIF、WebP")
+	}
+
+	// 3. 生成唯一文件名
+	fileExt := ""
+	switch contentType {
+	case "image/jpeg":
+		fileExt = ".jpg"
+	case "image/png":
+		fileExt = ".png"
+	case "image/gif":
+		fileExt = ".gif"
+	case "image/webp":
+		fileExt = ".webp"
+	default:
+		fileExt = ".jpg"
+	}
+
+	// 使用用户ID和时间戳生成唯一文件名
+	timestamp := time.Now().Unix()
+	newFileName := fmt.Sprintf("avatar_%d_%d%s", userID, timestamp, fileExt)
+
+	// 4. 创建上传目录（如果不存在）
+	uploadDir := "./uploads/avatars"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return "", fmt.Errorf("创建上传目录失败: %w", err)
+	}
+
+	// 5. 保存文件
+	filePath := fmt.Sprintf("%s/%s", uploadDir, newFileName)
+	if err := os.WriteFile(filePath, fileBytes, 0644); err != nil {
+		return "", fmt.Errorf("保存头像文件失败: %w", err)
+	}
+
+	// 6. 如果用户已有头像，删除旧头像
+	if user.AvatarURL != "" {
+		oldAvatarPath := strings.TrimPrefix(user.AvatarURL, "/uploads/")
+		oldAvatarPath = "./uploads/" + oldAvatarPath
+
+		// 检查文件是否存在，如果存在则删除
+		if _, err := os.Stat(oldAvatarPath); err == nil {
+			if err := os.Remove(oldAvatarPath); err != nil {
+				// 记录错误但不中断流程
+				fmt.Printf("删除旧头像失败: %v\n", err)
+			}
+		}
+	}
+
+	// 7. 更新用户头像URL
+	avatarURL := fmt.Sprintf("/uploads/avatars/%s", newFileName)
+	updates := map[string]interface{}{
+		"avatar_url": avatarURL,
+		"updated_at": time.Now(),
+	}
+
+	// 使用分布式锁更新用户信息
+	updateLockKey := fmt.Sprintf("user_update_avatar:%d", userID)
+	err = s.lockManager.GetLock(updateLockKey, 10*time.Second).Mutex(ctx, func() error {
+		if err := s.userSQL.UpdateUser(ctx, userID, updates); err != nil {
+			return fmt.Errorf("更新用户头像失败: %w", err)
+		}
+
+		// 清除缓存
+		s.userCacheLock.Lock()
+		delete(s.userCache, userID)
+		delete(s.userCacheTTL, userID)
+		s.userCacheLock.Unlock()
+
+		return nil
+	})
+
+	if err != nil {
+		// 如果更新失败，删除已上传的文件
+		os.Remove(filePath)
+		return "", err
+	}
+
+	return avatarURL, nil
+}
+
+// DeleteAvatar 删除头像
+func (s *userService) DeleteAvatar(ctx context.Context, userID uint) error {
+	// 1. 获取当前用户
+	user, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		return ErrUserNotFound
+	}
+
+	// 2. 如果用户没有头像，直接返回成功
+	if user.AvatarURL == "" {
+		return nil
+	}
+
+	// 3. 删除头像文件
+	avatarPath := strings.TrimPrefix(user.AvatarURL, "/uploads/")
+	avatarPath = "./uploads/" + avatarPath
+
+	if _, err := os.Stat(avatarPath); err == nil {
+		if err := os.Remove(avatarPath); err != nil {
+			return fmt.Errorf("删除头像文件失败: %w", err)
+		}
+	}
+
+	// 4. 更新用户头像URL为空
+	updates := map[string]interface{}{
+		"avatar_url": "",
+		"updated_at": time.Now(),
+	}
+
+	// 使用分布式锁更新用户信息
+	updateLockKey := fmt.Sprintf("user_delete_avatar:%d", userID)
+	err = s.lockManager.GetLock(updateLockKey, 10*time.Second).Mutex(ctx, func() error {
+		if err := s.userSQL.UpdateUser(ctx, userID, updates); err != nil {
+			return fmt.Errorf("更新用户头像失败: %w", err)
+		}
+
+		// 清除缓存
+		s.userCacheLock.Lock()
+		delete(s.userCache, userID)
+		delete(s.userCacheTTL, userID)
+		s.userCacheLock.Unlock()
+
+		return nil
+	})
+
+	return err
+}
+
+// GetAvatarURL 获取头像URL
+func (s *userService) GetAvatarURL(ctx context.Context, userID uint) (string, error) {
+	user, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		return "", ErrUserNotFound
+	}
+
+	return user.AvatarURL, nil
 }

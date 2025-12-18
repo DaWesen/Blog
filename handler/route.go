@@ -44,7 +44,6 @@ func SetupRouter(
 	})
 
 	router.GET("/favicon.ico", func(c *gin.Context) {
-		// 可以返回一个空响应或者自定义图标
 		c.Status(204) // No Content
 	})
 
@@ -82,9 +81,11 @@ func SetupRouter(
 			userGroup.GET("/check-email", userHandler.CheckEmailExists)
 			userGroup.GET("/users/:username", userHandler.GetUserPublicProfile)
 
+			// 头像获取接口
+			userGroup.GET("/users/:username/avatar", userHandler.GetAvatar)
+
 			// 添加统计接口
 			userGroup.GET("/stats/users/count", func(c *gin.Context) {
-				// 这里可以调用统计服务，暂时返回一个固定值
 				c.JSON(200, gin.H{
 					"count":   0,
 					"message": "用户统计功能待实现",
@@ -120,14 +121,12 @@ func SetupRouter(
 
 			// 添加纯数组格式的接口
 			categoryGroup.GET("/all", func(c *gin.Context) {
-				// 直接调用service获取所有分类
 				categories, _, err := categoryService.ListCategories(c.Request.Context(), 1, 1000)
 				if err != nil {
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "获取分类失败", "details": err.Error()})
 					return
 				}
 
-				// 直接返回分类数组，不包含分页信息
 				c.JSON(http.StatusOK, categories)
 			})
 		}
@@ -155,6 +154,8 @@ func SetupRouter(
 		{
 			userAuthGroup.GET("/profile", userHandler.GetProfile)
 			userAuthGroup.PUT("/profile", userHandler.UpdateProfile)
+			userAuthGroup.POST("/avatar", userHandler.UploadAvatar)   // 上传头像
+			userAuthGroup.DELETE("/avatar", userHandler.DeleteAvatar) // 删除头像
 		}
 
 		// 文章相关

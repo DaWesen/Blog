@@ -9,7 +9,10 @@ const CONFIG = {
     ITEMS_PER_PAGE: 10,
     DEBOUNCE_DELAY: 500,
     TOKEN_KEY: 'blog_token',
-    USER_KEY: 'blog_user'
+    USER_KEY: 'blog_user',
+    // 头像配置
+    AVATAR_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
+    MAX_AVATAR_SIZE: 2 * 1024 * 1024 // 2MB
 };
 
 // 全局状态
@@ -27,8 +30,6 @@ const STATE = {
 
 // 页面切换函数
 function showPage(pageId) {
-    console.log(`切换到页面: ${pageId}，当前用户:`, STATE.currentUser ? STATE.currentUser.name : '未登录');
-    
     // 隐藏所有页面
     document.querySelectorAll('.page').forEach(page => {
         page.classList.remove('active');
@@ -60,9 +61,7 @@ function showPage(pageId) {
                 break;
             case 'postDetail':
                 if (STATE.currentPostId) {
-                    console.log('加载文章详情，ID:', STATE.currentPostId);
                     loadPostDetail(STATE.currentPostId);
-                    // 延迟加载评论，确保文章内容先显示
                     setTimeout(() => {
                         loadPostComments(STATE.currentPostId);
                     }, 300);
@@ -71,24 +70,19 @@ function showPage(pageId) {
                 }
                 break;
             case 'login':
-                // 如果已登录，跳转到首页
                 if (isLoggedIn()) {
                     showHome();
                 }
                 break;
             case 'register':
-                // 如果已登录，跳转到首页
                 if (isLoggedIn()) {
                     showHome();
                 }
                 break;
             case 'profile':
-                console.log('加载个人资料页面');
                 if (isLoggedIn()) {
-                    // 直接调用 loadUserProfile 函数，它会重新渲染整个页面
                     loadUserProfile();
                 } else {
-                    console.log('用户未登录，跳转到登录页面');
                     showLogin();
                 }
                 break;
@@ -155,17 +149,21 @@ function showEditCategory(categoryId) {
 }
 function showProfile() { showPage('profile'); }
 
-// 更新导航栏 - 增强用户信息显示
+// 更新导航栏
 function updateNavigation() {
     const userSection = document.getElementById('userSection');
     
     if (STATE.currentUser) {
-        // 增强的用户显示，包含清晰的用户名
+        // 构建头像显示（如果有头像）
+        const avatarHTML = STATE.currentUser.avatar_url ? 
+            `<img src="${STATE.currentUser.avatar_url}" alt="${STATE.currentUser.name}" class="navbar-avatar">` :
+            `<div class="navbar-default-avatar"><i class="fas fa-user-circle"></i></div>`;
+        
         userSection.innerHTML = `
             <div class="dropdown">
-                <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                    <i class="fas fa-user-circle me-2"></i>
-                    <span class="fw-bold" style="color: var(--text-primary)">${STATE.currentUser.name || STATE.currentUser.username}</span>
+                <button class="btn btn-outline-light dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown">
+                    ${avatarHTML}
+                    <span class="fw-bold ms-2" style="color: var(--text-primary)">${STATE.currentUser.name || STATE.currentUser.username}</span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="#" onclick="showProfile()"><i class="fas fa-user me-2"></i> 个人资料</a></li>
@@ -177,12 +175,15 @@ function updateNavigation() {
             </div>
         `;
         
-        // 更新首页按钮 - 增强欢迎信息
+        // 更新首页按钮
         const userName = STATE.currentUser.name || STATE.currentUser.username;
         document.getElementById('homeActions').innerHTML = `
             <div class="welcome-user-info text-center mb-4">
                 <div class="mb-3">
-                    <i class="fas fa-user-circle fa-3x text-primary mb-2"></i>
+                    ${STATE.currentUser.avatar_url ? 
+                        `<img src="${STATE.currentUser.avatar_url}" alt="${userName}" class="home-avatar mb-2" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary-color);">` :
+                        `<i class="fas fa-user-circle fa-3x text-primary mb-2"></i>`
+                    }
                     <h3 class="fw-bold" style="color: var(--text-primary)">欢迎回来，${userName}！</h3>
                     <p class="text-secondary">今天有什么新想法要分享吗？</p>
                 </div>
@@ -230,13 +231,6 @@ function updateNavigation() {
 
 // 应用初始化
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('应用初始化开始...');
-    
-    // 检查 marked 库是否已加载
-    if (typeof marked === 'undefined') {
-        console.warn('marked.js 未加载，文章内容将使用纯文本显示');
-    }
-    
     // 加载保存的用户信息
     const savedToken = localStorage.getItem(CONFIG.TOKEN_KEY);
     const savedUser = localStorage.getItem(CONFIG.USER_KEY);
@@ -245,42 +239,20 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             STATE.currentToken = savedToken;
             STATE.currentUser = JSON.parse(savedUser);
-            console.log('从本地存储恢复用户:', STATE.currentUser);
         } catch (error) {
-            console.error('解析用户信息失败:', error);
             localStorage.removeItem(CONFIG.TOKEN_KEY);
             localStorage.removeItem(CONFIG.USER_KEY);
             STATE.currentToken = null;
             STATE.currentUser = null;
         }
-    } else {
-        console.log('本地存储中没有用户信息');
     }
-    
-    // 检查DOM元素是否存在
-    const requiredElements = [
-        'loginForm', 'registerForm', 'postForm', 
-        'categoryForm', 'profileForm', 'commentForm'
-    ];
-    
-    requiredElements.forEach(id => {
-        const element = document.getElementById(id);
-        if (!element) {
-            console.warn(`找不到元素: #${id}`);
-        }
-    });
     
     // 绑定表单事件
-    try {
-        document.getElementById('loginForm').addEventListener('submit', handleLogin);
-        document.getElementById('registerForm').addEventListener('submit', handleRegister);
-        document.getElementById('postForm').addEventListener('submit', handlePostSubmit);
-        document.getElementById('categoryForm').addEventListener('submit', handleCategorySubmit);
-        document.getElementById('commentForm').addEventListener('submit', handleCommentSubmit);
-        console.log('表单事件绑定完成');
-    } catch (error) {
-        console.error('绑定表单事件失败:', error);
-    }
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+    document.getElementById('registerForm').addEventListener('submit', handleRegister);
+    document.getElementById('postForm').addEventListener('submit', handlePostSubmit);
+    document.getElementById('categoryForm').addEventListener('submit', handleCategorySubmit);
+    document.getElementById('commentForm').addEventListener('submit', handleCommentSubmit);
     
     // 绑定搜索输入框
     const searchInput = document.getElementById('searchKeyword');
@@ -302,7 +274,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 显示首页
-    console.log('显示首页...');
     showPage('home');
     updateNavigation();
     
@@ -311,8 +282,6 @@ document.addEventListener('DOMContentLoaded', function() {
         loadCategories();
         updateUserCount();
     }, 500);
-    
-    console.log('应用初始化完成');
 });
 
 // 防抖搜索函数
@@ -353,7 +322,7 @@ async function updateUserCount() {
     }
 }
 
-// 首页更新 - 增强欢迎信息
+// 首页更新
 function updateHomePage() {
     const jumbotron = document.querySelector('.jumbotron-custom .jumbotron-header');
     if (jumbotron) {
@@ -468,7 +437,6 @@ function showMessage(elementId, message, type = 'info') {
         </div>
     `;
     
-    // 5秒后自动消失
     setTimeout(() => {
         const alert = element.querySelector('.alert');
         if (alert) {
@@ -478,135 +446,78 @@ function showMessage(elementId, message, type = 'info') {
     }, 5000);
 }
 
-// 调试工具函数
-function debugAPI(url) {
-    console.group('API调试信息');
-    console.log('请求URL:', CONFIG.API_BASE_URL + url);
-    console.log('当前用户:', STATE.currentUser);
-    console.log('当前Token:', STATE.currentToken ? '已设置' : '未设置');
-    console.groupEnd();
-}
-
-// 在页面切换时添加调试
-function showPage(pageId) {
-    // 隐藏所有页面
-    document.querySelectorAll('.page').forEach(page => {
-        page.classList.remove('active');
-        page.classList.add('d-none');
-    });
-    
-    // 显示目标页面
-    const targetPage = document.getElementById(pageId + 'Page');
-    if (targetPage) {
-        targetPage.classList.remove('d-none');
-        targetPage.classList.add('active');
-        STATE.currentPage = pageId;
-        
-        console.log('切换到页面:', pageId);
-        
-        // 执行页面特定的初始化
-        switch(pageId) {
-            case 'home':
-                updateHomePage();
-                break;
-            case 'posts':
-                loadCategoriesForFilter();
-                loadPosts();
-                break;
-            case 'categories':
-                loadCategories();
-                break;
-            case 'postDetail':
-                if (STATE.currentPostId) {
-                    console.log('加载文章详情，ID:', STATE.currentPostId);
-                    debugAPI(`/posts/${STATE.currentPostId}`);
-                    loadPostDetail(STATE.currentPostId);
-                    
-                    // 延迟加载评论，确保文章内容先显示
-                    setTimeout(() => {
-                        console.log('开始加载评论，文章ID:', STATE.currentPostId);
-                        debugAPI(`/posts/${STATE.currentPostId}/comments`);
-                        loadPostComments(STATE.currentPostId);
-                    }, 300);
-                }
-                break;
-            case 'profile':
-                loadUserProfile();
-                break;
-        }
+// 头像上传函数
+async function uploadAvatar(file) {
+    if (!file) {
+        throw new Error('请选择头像文件');
     }
     
-    updateNavigation();
-}
-
-// 调试工具：检查API响应
-function debugAPICall(url, method = 'GET', data = null) {
-    console.group('API调用调试');
-    console.log('URL:', CONFIG.API_BASE_URL + url);
-    console.log('Method:', method);
-    console.log('Data:', data);
-    console.log('Token:', STATE.currentToken ? '已设置' : '未设置');
-    console.log('User:', STATE.currentUser);
+    if (!CONFIG.AVATAR_TYPES.includes(file.type)) {
+        throw new Error('只支持 JPG、PNG、GIF、WebP 格式的图片');
+    }
     
-    fetch(CONFIG.API_BASE_URL + url, {
-        method: method,
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': STATE.currentToken ? `Bearer ${STATE.currentToken}` : ''
-        },
-        body: data ? JSON.stringify(data) : null
-    })
-    .then(response => {
-        console.log('Status:', response.status, response.statusText);
-        console.log('Headers:', Object.fromEntries(response.headers.entries()));
+    if (file.size > CONFIG.MAX_AVATAR_SIZE) {
+        throw new Error('头像大小不能超过 2MB');
+    }
+    
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    const url = `${CONFIG.API_BASE_URL}/user/avatar`;
+    const headers = {
+        'Authorization': `Bearer ${STATE.currentToken}`
+    };
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: formData
+        });
         
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            return response.json().then(data => {
-                console.log('Response JSON:', data);
-            });
-        } else {
-            return response.text().then(text => {
-                console.log('Response Text:', text || '(空)');
-            });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || '上传失败');
         }
-    })
-    .catch(error => {
-        console.error('Fetch Error:', error);
-    })
-    .finally(() => {
-        console.groupEnd();
-    });
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('上传头像失败:', error);
+        throw error;
+    }
 }
 
-// 在控制台暴露调试函数
-window.debugAPI = debugAPICall;
-
-function checkPageElements() {
-    const pages = [
-        'homePage', 'loginPage', 'registerPage', 'postsPage', 
-        'editPostPage', 'postDetailPage', 'categoriesPage', 
-        'editCategoryPage', 'profilePage'
-    ];
+// 删除头像
+async function deleteAvatar() {
+    if (!confirm('确定要删除头像吗？')) {
+        return;
+    }
     
-    console.group('页面元素检查');
-    pages.forEach(pageId => {
-        const element = document.getElementById(pageId);
-        console.log(`${pageId}: ${element ? '✓ 存在' : '✗ 不存在'}`);
-    });
-    console.groupEnd();
+    try {
+        const response = await apiCall('/user/avatar', 'DELETE', null, true);
+        
+        if (response.success) {
+            if (STATE.currentUser) {
+                STATE.currentUser.avatar_url = '';
+                localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(STATE.currentUser));
+                updateNavigation();
+            }
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('删除头像失败:', error);
+        throw error;
+    }
 }
 
-// 检查导航按钮
-function checkNavigation() {
-    console.group('导航按钮检查');
-    const navLinks = document.querySelectorAll('.nav-link');
-    navLinks.forEach(link => {
-        console.log(`导航: ${link.textContent.trim()} - ${link.onclick ? '有事件' : '无事件'}`);
-    });
-    console.groupEnd();
+// 检查登录状态
+function isLoggedIn() {
+    return !!STATE.currentToken && !!STATE.currentUser;
 }
 
-// 在控制台暴露检查函数
-window.checkPages = checkPageElements;
-window.checkNav = checkNavigation;
+// 获取当前用户ID
+function getCurrentUserId() {
+    return STATE.currentUser ? STATE.currentUser.id : null;
+}

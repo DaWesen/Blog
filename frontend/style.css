@@ -956,3 +956,122 @@ body {
 .page.active {
     display: block;
 }
+/* 在原有样式基础上添加以下头像相关样式 */
+
+/* 导航栏头像样式 */
+.navbar-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.navbar-default-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    border: 2px solid white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.navbar-default-avatar i {
+    font-size: 1.2rem;
+}
+
+/* 首页头像 */
+.home-avatar {
+    transition: transform 0.3s ease;
+}
+
+.home-avatar:hover {
+    transform: scale(1.05);
+}
+
+/* 头像管理样式 */
+.avatar-management {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.avatar-img {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.avatar-img:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 25px rgba(42, 123, 255, 0.4);
+}
+
+.default-avatar {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.default-avatar:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 25px rgba(42, 123, 255, 0.4);
+}
+
+.upload-card {
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.05), rgba(255, 90, 140, 0.05));
+    transition: all 0.3s ease;
+}
+
+.upload-card:hover {
+    border-color: var(--primary-color);
+    background: linear-gradient(135deg, rgba(42, 123, 255, 0.1), rgba(255, 90, 140, 0.1));
+}
+
+.file-input-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+/* 头像上传进度条 */
+.progress-bar {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .avatar-img {
+        width: 120px !important;
+        height: 120px !important;
+    }
+    
+    .default-avatar {
+        width: 120px !important;
+        height: 120px !important;
+    }
+    
+    .default-avatar i {
+        font-size: 60px !important;
+    }
+    
+    .upload-card {
+        padding: 1.5rem !important;
+    }
+    
+    .navbar-avatar {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .navbar-default-avatar {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .navbar-default-avatar i {
+        font-size: 1rem;
+    }
+}

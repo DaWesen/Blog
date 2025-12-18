@@ -1,4 +1,3 @@
-// main.go 修改后
 package main
 
 import (
@@ -13,8 +12,8 @@ import (
 	PostService "blog/service/PostService"
 	UserService "blog/service/UserService"
 	"blog/utils"
-	"fmt"
 	"log"
+	"os"
 )
 
 func main() {
@@ -97,10 +96,49 @@ func main() {
 	// 如果存在frontend文件夹，则提供静态文件服务
 	router.Static("/frontend", "./frontend")
 
+	// 添加头像上传目录的静态文件服务
+	router.Static("/uploads", "./uploads")
+
+	// 创建上传目录（如果不存在）
+	createUploadDirs()
+
 	// 10. 启动服务器
-	log.Printf("服务器启动在端口 %d", cfg.Server.Port)
-	log.Printf("前端地址: http://localhost:%d/frontend", cfg.Server.Port)
-	if err := router.Run(fmt.Sprintf(":%d", cfg.Server.Port)); err != nil {
-		log.Fatal("服务器启动失败:", err)
+	router.Run(":8080")
+}
+
+// 创建上传目录
+func createUploadDirs() {
+	// 创建头像上传目录
+	dirs := []string{
+		"./uploads",
+		"./uploads/avatars",
 	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+			log.Printf("创建目录失败: %s, error: %v", dir, err)
+		}
+	}
+
+	// 创建默认头像文件（如果不存在）
+	defaultAvatarPath := "./uploads/default-avatar.png"
+	if _, err := os.Stat(defaultAvatarPath); os.IsNotExist(err) {
+		createDefaultAvatar(defaultAvatarPath)
+	}
+}
+
+// 创建默认头像
+func createDefaultAvatar(path string) {
+	// 这里可以生成一个简单的默认头像
+	// 为了简单起见，我们创建一个空的PNG文件占位
+	file, err := os.Create(path)
+	if err != nil {
+		log.Printf("创建默认头像失败: %v", err)
+		return
+	}
+	defer file.Close()
+
+	// 可以在这里添加生成默认头像的逻辑
+	// 现在只是创建一个空文件
+	log.Printf("默认头像已创建: %s", path)
 }
