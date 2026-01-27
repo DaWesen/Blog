@@ -59,6 +59,7 @@ type UserResponse struct {
 	Status    model.UserStatus `json:"status"`
 	Relation  model.UserRole   `json:"relation"`
 	CreatedAt time.Time        `json:"created_at"`
+	UpdatedAt time.Time        `json:"updated_at"`
 }
 
 // Service接口
@@ -80,6 +81,9 @@ type UserService interface {
 	UploadAvatar(ctx context.Context, userID uint, fileBytes []byte, fileName string) (string, error)
 	DeleteAvatar(ctx context.Context, userID uint) error
 	GetAvatarURL(ctx context.Context, userID uint) (string, error)
+
+	// 搜索
+	SearchUsers(ctx context.Context, keyword string, page, size int) ([]*UserResponse, int64, error)
 }
 
 // 实现
@@ -973,4 +977,69 @@ func (s *userService) GetAvatarURL(ctx context.Context, userID uint) (string, er
 	}
 
 	return user.AvatarURL, nil
+}
+
+func (s *userService) SearchUsers(ctx context.Context, keyword string, page, size int) ([]*UserResponse, int64, error) {
+	// 1. 验证参数
+	if keyword == "" {
+		return nil, 0, errors.New("搜索关键词不能为空")
+	}
+
+	if page < 1 {
+		page = 1
+	}
+
+	if size < 1 || size > 100 {
+		size = 20
+	}
+
+	// 2. 限流检查
+	ip := utils.GetIPFromContext(ctx)
+	rateLimitKey := fmt.Sprintf("search_users:keyword:%s:ip:%s", keyword, ip)
+	rateLimitConfig := utils.LimitConfig{
+		WindowSize:  time.Minute,
+		MaxRequests: 100,
+	}
+
+	if err := s.rateLimiter.Allow(ctx, rateLimitKey, rateLimitConfig); err != nil {
+		return nil, 0, ErrRateLimited
+	}
+
+	// 3. 清理和准备关键词
+	keyword = strings.TrimSpace(keyword)
+
+	// 4. 使用分布式锁保护搜索过程
+	lockKey := fmt.Sprintf("search_users:%s:page:%d:size:%d", keyword, page, size)
+	var users []*model.User
+	var total int64
+
+	err := s.lockManager.GetLock(lockKey, 5*time.Second).Mutex(ctx, func() error {
+		// 5. 调用 DAO 层搜索用户
+		var err error
+		users, total, err = s.userSQL.SearchUsers(ctx, keyword, page, size)
+		if err != nil {
+			return fmt.Errorf("搜索用户失败: %w", err)
+		}
+
+		// 6. 缓存搜索结果（可选）
+		if len(users) > 0 {
+			for _, user := range users {
+				s.cacheUser(user)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 7. 转换为响应格式
+	userResponses := make([]*UserResponse, len(users))
+	for i, user := range users {
+		userResponses[i] = userToResponse(user)
+	}
+
+	return userResponses, total, nil
 }

@@ -1,5 +1,6 @@
 /**
  * 认证模块 - 处理用户登录、注册、Token管理等
+ * 修复版本：修复头像处理和用户数据验证
  */
 
 // 检查用户名可用性（防抖）
@@ -10,6 +11,8 @@ async function checkUsername(username) {
         if (username.length < 2) return;
         
         const feedback = document.getElementById('usernameFeedback');
+        if (!feedback) return;
+        
         feedback.innerHTML = '<small class="text-muted"><i class="fas fa-spinner fa-spin"></i> 检查中...</small>';
         
         try {
@@ -33,6 +36,8 @@ async function checkEmail(email) {
         if (email.length < 5 || !email.includes('@')) return;
         
         const feedback = document.getElementById('emailFeedback');
+        if (!feedback) return;
+        
         feedback.innerHTML = '<small class="text-muted"><i class="fas fa-spinner fa-spin"></i> 检查中...</small>';
         
         try {
@@ -73,11 +78,34 @@ async function handleLogin(e) {
             password: password
         });
         
-        STATE.currentToken = data.token;
-        STATE.currentUser = data.user;
+        // 确保token存在
+        if (!data.token) {
+            throw new Error('服务器未返回token');
+        }
         
+        // 更新STATE
+        STATE.currentToken = data.token;
+        
+        // 确保user数据存在
+        if (!data.user || !data.user.id || !data.user.name) {
+            throw new Error('服务器返回的用户数据不完整');
+        }
+        
+        STATE.currentUser = {
+            id: data.user.id,
+            username: data.user.name,  // 注意：模型中使用的是name，不是username
+            name: data.user.name,
+            email: data.user.email,
+            bio: data.user.bio || '',
+            avatar_url: data.user.avatar_url || '',
+            created_at: data.user.created_at
+        };
+        
+        // 保存到本地存储
         localStorage.setItem(CONFIG.TOKEN_KEY, data.token);
-        localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(data.user));
+        localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(STATE.currentUser));
+        
+        console.log('登录成功，设置token:', data.token.substring(0, 20) + '...');
         
         showMessage('loginMessage', '登录成功！', 'success');
         showGlobalMessage('登录成功！', 'success', 2000);
@@ -135,6 +163,11 @@ async function handleRegister(e) {
             bio: bio || ''
         });
         
+        // 验证返回的用户数据
+        if (!data.user || !data.user.id || !data.user.username) {
+            throw new Error('服务器返回的用户数据不完整');
+        }
+        
         showMessage('registerMessage', '注册成功！请登录。', 'success');
         showGlobalMessage('注册成功！请登录。', 'success', 3000);
         
@@ -161,7 +194,6 @@ async function handleProfileUpdate(e) {
     
     const name = document.getElementById('profileName').value;
     const bio = document.getElementById('profileBio').value;
-    const avatar = document.getElementById('profileAvatar').value;
     const email = document.getElementById('profileEmail').value;
     
     const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -175,13 +207,26 @@ async function handleProfileUpdate(e) {
         const updateData = {};
         if (name && name.trim()) updateData.name = name.trim();
         if (bio && bio.trim()) updateData.bio = bio.trim();
-        if (avatar && avatar.trim()) updateData.avatar_url = avatar.trim();
         if (email && email.trim()) updateData.email = email.trim();
         
         const data = await apiCall('/user/profile', 'PUT', updateData, true);
         
-        STATE.currentUser = data;
-        localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(data));
+        // 验证返回的用户数据
+        if (!data.id || !data.username) {
+            throw new Error('服务器返回的用户数据不完整');
+        }
+        
+        STATE.currentUser = {
+            id: data.id,
+            username: data.username,
+            name: data.name || data.username,
+            email: data.email,
+            bio: data.bio || '',
+            avatar_url: data.avatar_url || '',
+            created_at: data.created_at
+        };
+        
+        localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(STATE.currentUser));
         
         showMessage('profileMessage', '资料更新成功！', 'success');
         showGlobalMessage('资料更新成功！', 'success', 3000);
@@ -200,7 +245,7 @@ async function handleProfileUpdate(e) {
     }
 }
 
-// 加载用户资料 - 包含头像管理功能
+// 加载用户资料 - 修复头像显示
 async function loadUserProfile() {
     const container = document.getElementById('profilePage');
     if (!container) {
@@ -228,6 +273,9 @@ async function loadUserProfile() {
     try {
         const user = await apiCall('/user/profile', 'GET', null, true);
         
+        // 安全获取头像
+        const userAvatar = getAvatarUrl(user);
+        
         container.innerHTML = `
             <div class="row justify-content-center">
                 <div class="col-md-10">
@@ -235,8 +283,8 @@ async function loadUserProfile() {
                     <div class="profile-card mb-4">
                         <div class="profile-card-header">
                             <div class="profile-card-icon">
-                                ${user.avatar_url ? 
-                                    `<img src="${user.avatar_url}" alt="${user.name || user.username}" 
+                                ${userAvatar ? 
+                                    `<img src="${userAvatar}" alt="${user.name || user.username}" 
                                           class="profile-avatar" 
                                           onerror="this.onerror=null; this.style.display='none'; this.parentElement.innerHTML='<div class=\"default-avatar\"><i class=\"fas fa-user-circle\"></i></div>';" 
                                           style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid white;">` :
@@ -316,12 +364,12 @@ async function loadUserProfile() {
                                     <!-- 当前头像预览 -->
                                     <div class="current-avatar-preview text-center mb-4">
                                         <div id="currentAvatar" style="position: relative; display: inline-block;">
-                                            ${user.avatar_url ? 
-                                                `<img src="${user.avatar_url}" 
+                                            ${userAvatar ? 
+                                                `<img src="${userAvatar}" 
                                                      alt="当前头像" 
                                                      class="avatar-img mb-2"
                                                      id="avatarPreviewImg"
-                                                     onerror="this.onerror=null; this.src='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"50\" cy=\"50\" r=\"45\" fill=\"%232A7BFF\"/><text x=\"50\" y=\"55\" text-anchor=\"middle\" fill=\"white\" font-size=\"40\">${user.name ? user.name.charAt(0) : 'U'}</text></svg>';"
+                                                     onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgdmlld0JveD0iMCAwIDE1MCAxNTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNzUiIGN5PSI3NSIgcj0iNzUiIGZpbGw9IiMyQTdCRkYiLz48dGV4dCB4PSI3NSIgeT0iODUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjUwIj5tZTwvdGV4dD48L3N2Zz4=';"
                                                      style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 4px solid var(--primary-color); box-shadow: 0 6px 20px rgba(42, 123, 255, 0.3);">` :
                                                 `<div class="default-avatar d-flex align-items-center justify-content-center mb-2"
                                                       style="width: 150px; height: 150px; border-radius: 50%; background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); border: 4px solid var(--primary-color); box-shadow: 0 6px 20px rgba(42, 123, 255, 0.3);">
@@ -346,7 +394,7 @@ async function loadUserProfile() {
                                                 <div class="file-input-wrapper">
                                                     <input type="file" id="avatarFileInput" accept="image/*" 
                                                            class="form-control" style="display: none;">
-                                                    <button class="btn-custom btn-primary-custom" onclick="document.getElementById('avatarFileInput').click()">
+                                                    <button class="btn-custom btn-primary-custom" onclick="handleAvatarSelect()">
                                                         <i class="fas fa-folder-open me-2"></i>选择图片
                                                     </button>
                                                     <span id="selectedFileName" class="ms-2 text-muted"></span>
@@ -381,7 +429,7 @@ async function loadUserProfile() {
                                     </div>
 
                                     <!-- 删除头像按钮（如果有头像） -->
-                                    ${user.avatar_url ? `
+                                    ${userAvatar ? `
                                     <div class="avatar-delete text-center">
                                         <button class="btn-custom btn-danger-custom" onclick="handleAvatarDelete()">
                                             <i class="fas fa-trash-alt me-2"></i>删除头像
@@ -489,49 +537,13 @@ async function loadUserProfile() {
         // 重新绑定表单提交事件
         const profileForm = document.getElementById('profileForm');
         if (profileForm) {
-            const newForm = profileForm.cloneNode(true);
-            profileForm.parentNode.replaceChild(newForm, profileForm);
-            newForm.addEventListener('submit', handleProfileUpdate);
+            profileForm.addEventListener('submit', handleProfileUpdate);
         }
         
         // 绑定头像文件选择事件
         const avatarFileInput = document.getElementById('avatarFileInput');
         if (avatarFileInput) {
-            avatarFileInput.addEventListener('change', function() {
-                const file = this.files[0];
-                const uploadBtn = document.getElementById('uploadAvatarBtn');
-                const fileNameSpan = document.getElementById('selectedFileName');
-                const previewContainer = document.getElementById('avatarUploadPreview');
-                const previewImg = document.getElementById('newAvatarPreview');
-                
-                if (file) {
-                    fileNameSpan.textContent = file.name;
-                    
-                    if (!CONFIG.AVATAR_TYPES.includes(file.type)) {
-                        showMessage('avatarMessage', '只支持 JPG、PNG、GIF、WebP 格式的图片', 'warning');
-                        uploadBtn.disabled = true;
-                        return;
-                    }
-                    
-                    if (file.size > CONFIG.MAX_AVATAR_SIZE) {
-                        showMessage('avatarMessage', '图片大小不能超过 2MB', 'warning');
-                        uploadBtn.disabled = true;
-                        return;
-                    }
-                    
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        previewImg.src = e.target.result;
-                        previewContainer.style.display = 'block';
-                        uploadBtn.disabled = false;
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    fileNameSpan.textContent = '';
-                    previewContainer.style.display = 'none';
-                    uploadBtn.disabled = true;
-                }
-            });
+            avatarFileInput.addEventListener('change', handleAvatarFileSelect);
         }
         
     } catch (error) {
@@ -591,6 +603,49 @@ function logout() {
     }
 }
 
+// 选择头像
+function handleAvatarSelect() {
+    document.getElementById('avatarFileInput').click();
+}
+
+// 处理头像文件选择
+function handleAvatarFileSelect() {
+    const fileInput = document.getElementById('avatarFileInput');
+    const file = fileInput.files[0];
+    const uploadBtn = document.getElementById('uploadAvatarBtn');
+    const fileNameSpan = document.getElementById('selectedFileName');
+    const previewContainer = document.getElementById('avatarUploadPreview');
+    const previewImg = document.getElementById('newAvatarPreview');
+    
+    if (file) {
+        fileNameSpan.textContent = file.name;
+        
+        if (!CONFIG.AVATAR_TYPES.includes(file.type)) {
+            showMessage('avatarMessage', '只支持 JPG、PNG、GIF、WebP 格式的图片', 'warning');
+            uploadBtn.disabled = true;
+            return;
+        }
+        
+        if (file.size > CONFIG.MAX_AVATAR_SIZE) {
+            showMessage('avatarMessage', '图片大小不能超过 2MB', 'warning');
+            uploadBtn.disabled = true;
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            previewImg.src = e.target.result;
+            previewContainer.style.display = 'block';
+            uploadBtn.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        fileNameSpan.textContent = '';
+        previewContainer.style.display = 'none';
+        uploadBtn.disabled = true;
+    }
+}
+
 // 处理头像上传
 async function handleAvatarUpload() {
     const fileInput = document.getElementById('avatarFileInput');
@@ -618,86 +673,70 @@ async function handleAvatarUpload() {
         const formData = new FormData();
         formData.append('avatar', file);
         
-        return new Promise((resolve, reject) => {
-            xhr.open('POST', CONFIG.API_BASE_URL + '/user/avatar');
-            xhr.setRequestHeader('Authorization', `Bearer ${STATE.currentToken}`);
+        xhr.open('POST', CONFIG.API_BASE_URL + '/user/avatar');
+        xhr.setRequestHeader('Authorization', `Bearer ${STATE.currentToken}`);
+        
+        xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = percentComplete + '%';
+                statusText.textContent = `上传中... ${percentComplete}%`;
+            }
+        };
+        
+        xhr.onload = function() {
+            progressBar.style.width = '100%';
+            statusText.textContent = '上传完成！';
             
-            xhr.upload.onprogress = function(e) {
-                if (e.lengthComputable) {
-                    const percentComplete = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = percentComplete + '%';
-                    statusText.textContent = `上传中... ${percentComplete}%`;
-                }
-            };
-            
-            xhr.onload = function() {
-                progressBar.style.width = '100%';
-                statusText.textContent = '上传完成！';
-                
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    try {
-                        const data = JSON.parse(xhr.responseText);
-                        
-                        if (data.success && data.avatar_url) {
-                            STATE.currentUser.avatar_url = data.avatar_url;
-                            localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(STATE.currentUser));
-                            
-                            const previewImg = document.getElementById('avatarPreviewImg');
-                            if (previewImg) {
-                                previewImg.src = data.avatar_url + '?t=' + Date.now();
-                            }
-                            
-                            const defaultAvatar = document.querySelector('.default-avatar');
-                            if (defaultAvatar) {
-                                defaultAvatar.style.display = 'none';
-                            }
-                            
-                            showMessage('avatarMessage', '头像上传成功！', 'success');
-                            
-                            setTimeout(() => {
-                                updateNavigation();
-                                refreshProfile();
-                            }, 1000);
-                        }
-                    } catch (error) {
-                        showMessage('avatarMessage', '解析响应失败', 'danger');
-                    }
-                } else {
-                    try {
-                        const errorData = JSON.parse(xhr.responseText);
-                        showMessage('avatarMessage', `上传失败: ${errorData.error || '未知错误'}`, 'danger');
-                    } catch (e) {
-                        showMessage('avatarMessage', `上传失败: ${xhr.statusText}`, 'danger');
-                    }
-                }
-                
-                setTimeout(() => {
-                    uploadBtn.disabled = false;
-                    uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>上传头像';
-                    progressContainer.style.display = 'none';
-                    progressBar.style.width = '0%';
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const data = JSON.parse(xhr.responseText);
                     
-                    fileInput.value = '';
-                    document.getElementById('selectedFileName').textContent = '';
-                    document.getElementById('avatarUploadPreview').style.display = 'none';
-                }, 1500);
-                
-                resolve();
-            };
+                    if (data.success && data.avatar_url) {
+                        STATE.currentUser.avatar_url = data.avatar_url;
+                        localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(STATE.currentUser));
+                        
+                        showMessage('avatarMessage', '头像上传成功！', 'success');
+                        
+                        setTimeout(() => {
+                            updateNavigation();
+                            refreshProfile();
+                        }, 1000);
+                    }
+                } catch (error) {
+                    showMessage('avatarMessage', '解析响应失败', 'danger');
+                }
+            } else {
+                try {
+                    const errorData = JSON.parse(xhr.responseText);
+                    showMessage('avatarMessage', `上传失败: ${errorData.error || '未知错误'}`, 'danger');
+                } catch (e) {
+                    showMessage('avatarMessage', `上传失败: ${xhr.statusText}`, 'danger');
+                }
+            }
             
-            xhr.onerror = function() {
-                showMessage('avatarMessage', '网络错误，上传失败', 'danger');
-                
+            setTimeout(() => {
                 uploadBtn.disabled = false;
                 uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>上传头像';
                 progressContainer.style.display = 'none';
                 progressBar.style.width = '0%';
                 
-                reject(new Error('Network error'));
-            };
+                fileInput.value = '';
+                document.getElementById('selectedFileName').textContent = '';
+                document.getElementById('avatarUploadPreview').style.display = 'none';
+            }, 1500);
+        };
+        
+        xhr.onerror = function() {
+            showMessage('avatarMessage', '网络错误，上传失败', 'danger');
             
-            xhr.send(formData);
-        });
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-upload me-2"></i>上传头像';
+            progressContainer.style.display = 'none';
+            progressBar.style.width = '0%';
+        };
+        
+        xhr.send(formData);
         
     } catch (error) {
         console.error('上传头像失败:', error);

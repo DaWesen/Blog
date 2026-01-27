@@ -1,32 +1,55 @@
-/**
- * 小团体博客系统 - 主应用逻辑
- * 专为3-4人小团体设计
- */
+// app.js 顶部修改
+console.log('app.js 正在加载...');
 
-// 全局配置
-const CONFIG = {
-    API_BASE_URL: 'http://localhost:8080/api',
-    ITEMS_PER_PAGE: 10,
-    DEBOUNCE_DELAY: 500,
-    TOKEN_KEY: 'blog_token',
-    USER_KEY: 'blog_user',
-    // 头像配置
-    AVATAR_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
-    MAX_AVATAR_SIZE: 2 * 1024 * 1024 // 2MB
-};
+// 检查全局变量是否存在
+if (!window.CONFIG) {
+    console.error('警告: CONFIG 未定义，使用默认值');
+    window.CONFIG = {
+        API_BASE_URL: 'http://localhost:8080/api',
+        ITEMS_PER_PAGE: 10,
+        DEBOUNCE_DELAY: 500,
+        TOKEN_KEY: 'blog_token',
+        USER_KEY: 'blog_user',
+        AVATAR_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
+        MAX_AVATAR_SIZE: 2 * 1024 * 1024
+    };
+}
 
-// 全局状态
-const STATE = {
-    currentUser: null,
-    currentToken: null,
-    currentPage: 'home',
-    currentPostId: null,
-    categories: [],
-    searchKeyword: '',
-    currentCategory: '',
-    currentPageNum: 1,
-    totalPages: 1
-};
+if (!window.STATE) {
+    console.error('警告: STATE 未定义，使用默认值');
+    window.STATE = {
+        currentUser: null,
+        currentToken: null,
+        currentPage: 'home',
+        currentPostId: null,
+        categories: [],
+        searchKeyword: '',
+        currentCategory: '',
+        currentPageNum: 1,
+        totalPages: 1
+    };
+}
+
+// 引用全局变量
+const CONFIG = window.CONFIG;
+const STATE = window.STATE;
+
+console.log('app.js: 使用以下配置:');
+console.log('- CONFIG:', CONFIG);
+console.log('- STATE:', STATE);
+// 安全的获取头像URL函数
+function getAvatarUrl(user, size = 'normal') {
+    if (!user || !user.username) {
+        return null;
+    }
+    
+    if (user.avatar_url && user.avatar_url.startsWith('http')) {
+        return user.avatar_url;
+    }
+    
+    // 使用默认头像
+    return null;
+}
 
 // 页面切换函数
 function showPage(pageId) {
@@ -40,7 +63,9 @@ function showPage(pageId) {
     const targetPage = document.getElementById(pageId + 'Page');
     if (targetPage) {
         targetPage.classList.remove('d-none');
-        targetPage.classList.add('active');
+        setTimeout(() => {
+            targetPage.classList.add('active');
+        }, 10);
         STATE.currentPage = pageId;
         
         // 执行页面特定的初始化
@@ -103,6 +128,31 @@ function showPage(pageId) {
                     showLogin();
                 }
                 break;
+            // 页面切换函数 - 修改Feed部分
+case 'feed':
+    if (isLoggedIn()) {
+        // 已登录：先尝试显示用户动态
+        STATE.feedType = 'user';
+        updateFeedNavigation('user');
+        
+        // 延迟加载，确保DOM渲染完成
+        setTimeout(() => {
+            loadUserFeed('me');
+        }, 100);
+    } else {
+        // 未登录：显示热门文章
+        STATE.feedType = 'hot';
+        updateFeedNavigation('hot');
+        
+        setTimeout(() => {
+            // 尝试加载热门，如果失败则显示提示
+            loadHotFeed();
+        }, 100);
+    }
+    break;
+            case 'search':
+                initializeSearchForm();
+                break;
         }
     } else {
         console.error(`找不到页面: ${pageId}Page`);
@@ -112,7 +162,13 @@ function showPage(pageId) {
 }
 
 // 快捷页面切换函数
-function showHome() { showPage('home'); }
+function showHome() { 
+    if (window.showPage) {
+        showPage('home'); 
+    } else {
+        location.reload();
+    }
+}
 function showLogin() { showPage('login'); }
 function showRegister() { showPage('register'); }
 function showPosts() { showPage('posts'); }
@@ -148,22 +204,42 @@ function showEditCategory(categoryId) {
     showPage('editCategory');
 }
 function showProfile() { showPage('profile'); }
+function showFeed(type = 'user') {
+    if (type === 'user' && !isLoggedIn()) {
+        showLogin();
+        return;
+    }
+    STATE.feedType = type;
+    showPage('feed');
+}
+function showSearch() {
+    showPage('search');
+}
 
-// 更新导航栏
+// 更新导航栏 - 修复头像URL问题
 function updateNavigation() {
     const userSection = document.getElementById('userSection');
     
-    if (STATE.currentUser) {
-        // 构建头像显示（如果有头像）
-        const avatarHTML = STATE.currentUser.avatar_url ? 
-            `<img src="${STATE.currentUser.avatar_url}" alt="${STATE.currentUser.name}" class="navbar-avatar">` :
+    if (!userSection) {
+        console.warn('userSection元素不存在');
+        return;
+    }
+    
+    if (isLoggedIn()) {
+        // 安全地获取用户信息
+        const userName = STATE.currentUser?.name || STATE.currentUser?.username || '用户';
+        const userAvatar = getAvatarUrl(STATE.currentUser);
+        
+        // 构建头像显示
+        const avatarHTML = userAvatar ? 
+            `<img src="${userAvatar}" alt="${userName}" class="navbar-avatar" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\"navbar-default-avatar\"><i class=\"fas fa-user-circle\"></i></div>';">` :
             `<div class="navbar-default-avatar"><i class="fas fa-user-circle"></i></div>`;
         
         userSection.innerHTML = `
             <div class="dropdown">
                 <button class="btn btn-outline-light dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown">
                     ${avatarHTML}
-                    <span class="fw-bold ms-2" style="color: var(--text-primary)">${STATE.currentUser.name || STATE.currentUser.username}</span>
+                    <span class="fw-bold ms-2" style="color: var(--text-primary)">${userName}</span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="#" onclick="showProfile()"><i class="fas fa-user me-2"></i> 个人资料</a></li>
@@ -176,27 +252,30 @@ function updateNavigation() {
         `;
         
         // 更新首页按钮
-        const userName = STATE.currentUser.name || STATE.currentUser.username;
-        document.getElementById('homeActions').innerHTML = `
-            <div class="welcome-user-info text-center mb-4">
-                <div class="mb-3">
-                    ${STATE.currentUser.avatar_url ? 
-                        `<img src="${STATE.currentUser.avatar_url}" alt="${userName}" class="home-avatar mb-2" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary-color);">` :
-                        `<i class="fas fa-user-circle fa-3x text-primary mb-2"></i>`
-                    }
-                    <h3 class="fw-bold" style="color: var(--text-primary)">欢迎回来，${userName}！</h3>
-                    <p class="text-secondary">今天有什么新想法要分享吗？</p>
+        const homeActions = document.getElementById('homeActions');
+        if (homeActions) {
+            const homeAvatar = userAvatar ? 
+                `<img src="${userAvatar}" alt="${userName}" class="home-avatar mb-2" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid var(--primary-color);" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\"fas fa-user-circle fa-3x text-primary mb-2\"></i>';">` :
+                `<i class="fas fa-user-circle fa-3x text-primary mb-2"></i>`;
+            
+            homeActions.innerHTML = `
+                <div class="welcome-user-info text-center mb-4">
+                    <div class="mb-3">
+                        ${homeAvatar}
+                        <h3 class="fw-bold" style="color: var(--text-primary)">欢迎回来，${userName}！</h3>
+                        <p class="text-secondary">今天有什么新想法要分享吗？</p>
+                    </div>
+                    <div class="d-flex gap-3 justify-content-center">
+                        <button class="btn-custom btn-primary-custom btn-lg" onclick="showCreatePost()">
+                            <i class="fas fa-pen-fancy"></i> 写文章
+                        </button>
+                        <button class="btn-custom btn-outline-custom btn-lg" onclick="showPosts()">
+                            <i class="fas fa-newspaper"></i> 查看文章
+                        </button>
+                    </div>
                 </div>
-                <div class="d-flex gap-3 justify-content-center">
-                    <button class="btn-custom btn-primary-custom btn-lg" onclick="showCreatePost()">
-                        <i class="fas fa-pen-fancy"></i> 写文章
-                    </button>
-                    <button class="btn-custom btn-outline-custom btn-lg" onclick="showPosts()">
-                        <i class="fas fa-newspaper"></i> 查看文章
-                    </button>
-                </div>
-            </div>
-        `;
+            `;
+        }
     } else {
         userSection.innerHTML = `
             <div class="d-flex gap-2">
@@ -209,50 +288,58 @@ function updateNavigation() {
             </div>
         `;
         
-        document.getElementById('homeActions').innerHTML = `
-            <div class="text-center">
-                <div class="mb-4">
-                    <i class="fas fa-graduation-cap fa-4x text-primary mb-3"></i>
-                    <h3 class="fw-bold" style="color: var(--text-primary)">加入基沃托斯学园</h3>
-                    <p class="text-secondary mb-4">记录学园生活的每一刻美好时光</p>
+        const homeActions = document.getElementById('homeActions');
+        if (homeActions) {
+            homeActions.innerHTML = `
+                <div class="text-center">
+                    <div class="mb-4">
+                        <i class="fas fa-graduation-cap fa-4x text-primary mb-3"></i>
+                        <h3 class="fw-bold" style="color: var(--text-primary)">加入基沃托斯学园</h3>
+                        <p class="text-secondary mb-4">记录学园生活的每一刻美好时光</p>
+                    </div>
+                    <div class="d-flex gap-3 justify-content-center">
+                        <button class="btn-custom btn-primary-custom btn-lg" onclick="showLogin()">
+                            <i class="fas fa-sign-in-alt"></i> 立即登录
+                        </button>
+                        <button class="btn-custom btn-outline-custom btn-lg" onclick="showRegister()">
+                            <i class="fas fa-user-plus"></i> 注册账号
+                        </button>
+                    </div>
                 </div>
-                <div class="d-flex gap-3 justify-content-center">
-                    <button class="btn-custom btn-primary-custom btn-lg" onclick="showLogin()">
-                        <i class="fas fa-sign-in-alt"></i> 立即登录
-                    </button>
-                    <button class="btn-custom btn-outline-custom btn-lg" onclick="showRegister()">
-                        <i class="fas fa-user-plus"></i> 注册账号
-                    </button>
-                </div>
-            </div>
-        `;
+            `;
+        }
     }
 }
 
 // 应用初始化
-document.addEventListener('DOMContentLoaded', function() {
-    // 加载保存的用户信息
+function initializeApp() {
+        console.log('初始化博客系统...');
+    
+    // 加载保存的用户信息 - 修复：优先从localStorage恢复
     const savedToken = localStorage.getItem(CONFIG.TOKEN_KEY);
     const savedUser = localStorage.getItem(CONFIG.USER_KEY);
     
-    if (savedToken && savedUser) {
+    if (savedToken) {
+        STATE.currentToken = savedToken;
+        console.log('已恢复token:', savedToken.substring(0, 20) + '...');
+    }
+    
+    if (savedUser) {
         try {
-            STATE.currentToken = savedToken;
             STATE.currentUser = JSON.parse(savedUser);
+            console.log('已恢复用户:', STATE.currentUser?.username || 'unknown');
         } catch (error) {
-            localStorage.removeItem(CONFIG.TOKEN_KEY);
+            console.error('解析用户数据失败:', error);
             localStorage.removeItem(CONFIG.USER_KEY);
-            STATE.currentToken = null;
-            STATE.currentUser = null;
         }
     }
     
-    // 绑定表单事件
-    document.getElementById('loginForm').addEventListener('submit', handleLogin);
-    document.getElementById('registerForm').addEventListener('submit', handleRegister);
-    document.getElementById('postForm').addEventListener('submit', handlePostSubmit);
-    document.getElementById('categoryForm').addEventListener('submit', handleCategorySubmit);
-    document.getElementById('commentForm').addEventListener('submit', handleCommentSubmit);
+    // 验证token是否有效
+    validateTokenOnStartup();
+    // 绑定表单事件 - 确保事件监听器工作
+    setTimeout(() => {
+        bindFormEvents();
+    }, 100);
     
     // 绑定搜索输入框
     const searchInput = document.getElementById('searchKeyword');
@@ -282,7 +369,47 @@ document.addEventListener('DOMContentLoaded', function() {
         loadCategories();
         updateUserCount();
     }, 500);
-});
+}
+
+// 绑定表单事件
+function bindFormEvents() {
+    // 登录表单
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
+    
+    // 注册表单
+    const registerForm = document.getElementById('registerForm');
+    if (registerForm) {
+        registerForm.addEventListener('submit', handleRegister);
+    }
+    
+    // 文章表单
+    const postForm = document.getElementById('postForm');
+    if (postForm) {
+        postForm.addEventListener('submit', handlePostSubmit);
+    }
+    
+    // 分类表单
+    const categoryForm = document.getElementById('categoryForm');
+    if (categoryForm) {
+        categoryForm.addEventListener('submit', handleCategorySubmit);
+    }
+    
+    // 评论表单
+    const commentForm = document.getElementById('commentForm');
+    if (commentForm) {
+        commentForm.addEventListener('submit', handleCommentSubmit);
+    }
+}
+
+// DOM加载完成后初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+    initializeApp();
+}
 
 // 防抖搜索函数
 let searchTimeout;
@@ -297,6 +424,8 @@ function debouncedSearch() {
 // Markdown快捷输入
 function insertText(text) {
     const textarea = document.getElementById('postContent');
+    if (!textarea) return;
+    
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selectedText = textarea.value.substring(start, end);
@@ -312,13 +441,14 @@ function insertText(text) {
 // 更新用户统计
 async function updateUserCount() {
     try {
-        const response = await fetch(`${CONFIG.API_BASE_URL}/users/count`);
-        if (response.ok) {
-            const data = await response.json();
-            document.getElementById('userCount').textContent = data.count || 0;
+        // 简单统计，显示固定数字
+        const count = STATE.currentUser ? 1 : 0;
+        const countElement = document.getElementById('userCount');
+        if (countElement) {
+            countElement.textContent = count;
         }
     } catch (error) {
-        console.error('获取用户数失败:', error);
+        console.error('更新用户统计失败:', error);
     }
 }
 
@@ -328,11 +458,10 @@ function updateHomePage() {
     if (jumbotron) {
         if (STATE.currentUser) {
             const userName = STATE.currentUser.name || STATE.currentUser.username;
-            jumbotron.querySelector('.display-4').textContent = `欢迎回来，${userName}！`;
-            jumbotron.querySelector('.lead').textContent = '今天有什么新想法要分享吗？';
-        } else {
-            jumbotron.querySelector('.display-4').textContent = '欢迎来到基沃托斯学园';
-            jumbotron.querySelector('.lead').textContent = '专为学园生活设计的博客系统，记录每一天的成长与故事。';
+            const title = jumbotron.querySelector('.display-4');
+            const lead = jumbotron.querySelector('.lead');
+            if (title) title.textContent = `欢迎回来，${userName}！`;
+            if (lead) lead.textContent = '今天有什么新想法要分享吗？';
         }
     }
 }
@@ -342,6 +471,8 @@ async function loadCategoriesForFilter() {
     try {
         const categories = await getCategories();
         const filter = document.getElementById('categoryFilter');
+        if (!filter) return;
+        
         filter.innerHTML = '<option value="">全部分类</option>';
         
         categories.forEach(category => {
@@ -360,6 +491,8 @@ async function loadCategoriesForPost() {
     try {
         const categories = await getCategories();
         const select = document.getElementById('postCategory');
+        if (!select) return;
+        
         select.innerHTML = '<option value="">请选择分类</option>';
         
         categories.forEach(category => {
@@ -409,6 +542,8 @@ async function loadCategoryForEdit(categoryId) {
 // 工具函数
 function showLoading(buttonId) {
     const button = document.getElementById(buttonId);
+    if (!button) return;
+    
     const spinner = button.querySelector('.spinner-border');
     if (spinner) {
         spinner.classList.remove('d-none');
@@ -418,6 +553,8 @@ function showLoading(buttonId) {
 
 function hideLoading(buttonId) {
     const button = document.getElementById(buttonId);
+    if (!button) return;
+    
     const spinner = button.querySelector('.spinner-border');
     if (spinner) {
         spinner.classList.add('d-none');
@@ -427,6 +564,11 @@ function hideLoading(buttonId) {
 
 function showMessage(elementId, message, type = 'info') {
     const element = document.getElementById(elementId);
+    if (!element) {
+        console.warn(`元素 ${elementId} 不存在`);
+        return;
+    }
+    
     element.innerHTML = `
         <div class="alert alert-${type} alert-dismissible fade show" role="alert">
             <div class="d-flex align-items-center">
@@ -440,84 +582,111 @@ function showMessage(elementId, message, type = 'info') {
     setTimeout(() => {
         const alert = element.querySelector('.alert');
         if (alert) {
-            const bsAlert = new bootstrap.Alert(alert);
-            bsAlert.close();
+            try {
+                const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+                bsAlert.close();
+            } catch (error) {
+                element.innerHTML = '';
+            }
         }
     }, 5000);
 }
 
-// 头像上传函数
-async function uploadAvatar(file) {
-    if (!file) {
-        throw new Error('请选择头像文件');
-    }
-    
-    if (!CONFIG.AVATAR_TYPES.includes(file.type)) {
-        throw new Error('只支持 JPG、PNG、GIF、WebP 格式的图片');
-    }
-    
-    if (file.size > CONFIG.MAX_AVATAR_SIZE) {
-        throw new Error('头像大小不能超过 2MB');
-    }
-    
-    const formData = new FormData();
-    formData.append('avatar', file);
-    
-    const url = `${CONFIG.API_BASE_URL}/user/avatar`;
-    const headers = {
-        'Authorization': `Bearer ${STATE.currentToken}`
-    };
-    
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: formData
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || '上传失败');
-        }
-        
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error('上传头像失败:', error);
-        throw error;
-    }
-}
-
-// 删除头像
-async function deleteAvatar() {
-    if (!confirm('确定要删除头像吗？')) {
-        return;
-    }
-    
-    try {
-        const response = await apiCall('/user/avatar', 'DELETE', null, true);
-        
-        if (response.success) {
-            if (STATE.currentUser) {
-                STATE.currentUser.avatar_url = '';
-                localStorage.setItem(CONFIG.USER_KEY, JSON.stringify(STATE.currentUser));
-                updateNavigation();
-            }
-            return true;
-        }
-        return false;
-    } catch (error) {
-        console.error('删除头像失败:', error);
-        throw error;
-    }
-}
-
 // 检查登录状态
 function isLoggedIn() {
-    return !!STATE.currentToken && !!STATE.currentUser;
+    // 确保检查 token 和 user 都存在
+    const hasToken = !!STATE.currentToken || !!localStorage.getItem(CONFIG.TOKEN_KEY);
+    const hasUser = !!STATE.currentUser || !!localStorage.getItem(CONFIG.USER_KEY);
+    
+    console.log('isLoggedIn检查:', { hasToken, hasUser });
+    
+    return hasToken && hasUser;
 }
 
 // 获取当前用户ID
 function getCurrentUserId() {
     return STATE.currentUser ? STATE.currentUser.id : null;
 }
+
+// 全局消息函数
+function showGlobalMessage(message, type = 'info', duration = 3000) {
+    // 移除现有的全局消息
+    const existing = document.getElementById('global-message');
+    if (existing) existing.remove();
+    
+    // 创建消息容器
+    const messageDiv = document.createElement('div');
+    messageDiv.id = 'global-message';
+    messageDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    messageDiv.style.cssText = `
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        min-width: 300px;
+        max-width: 500px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    
+    const icon = type === 'success' ? 'check-circle' : 
+                 type === 'danger' ? 'exclamation-triangle' : 
+                 type === 'warning' ? 'exclamation-circle' : 'info-circle';
+    
+    messageDiv.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="fas fa-${icon} me-2"></i>
+            <div>${message}</div>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    document.body.appendChild(messageDiv);
+    
+    // 自动消失
+    if (duration > 0) {
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                try {
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(messageDiv);
+                    bsAlert.close();
+                } catch (error) {
+                    messageDiv.remove();
+                }
+            }
+        }, duration);
+    }
+}
+async function validateTokenOnStartup() {
+    if (!STATE.currentToken) return;
+    
+    try {
+        // 尝试一个简单的API调用来验证token
+        await apiCall('/user/profile', 'GET', null, true);
+        console.log('token验证成功，用户已登录');
+    } catch (error) {
+        console.log('token无效或已过期:', error.message);
+        // 清除无效的token
+        STATE.currentToken = null;
+        STATE.currentUser = null;
+        localStorage.removeItem(CONFIG.TOKEN_KEY);
+        localStorage.removeItem(CONFIG.USER_KEY);
+        updateNavigation();
+    }
+}
+
+// 暴露函数到全局
+window.showPage = showPage;
+window.showHome = showHome;
+window.showLogin = showLogin;
+window.showRegister = showRegister;
+window.showPosts = showPosts;
+window.showPostDetail = showPostDetail;
+window.showCreatePost = showCreatePost;
+window.showEditPost = showEditPost;
+window.showCategories = showCategories;
+window.showCreateCategory = showCreateCategory;
+window.showEditCategory = showEditCategory;
+window.showProfile = showProfile;
+window.showFeed = showFeed;
+window.showSearch = showSearch;
+window.insertText = insertText;
+window.logout = logout;

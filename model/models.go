@@ -39,15 +39,15 @@ type User struct {
 }
 
 type Post struct {
-	// 帖子基础模型
+	// 帖子基础模型（原有字段不变）
 	ID      uint   `json:"id" gorm:"primaryKey;autoIncrement"`
 	Title   string `json:"title" gorm:"type:varchar(255);not null;index"`
 	Slug    string `json:"slug" gorm:"type:varchar(255);not null;uniqueIndex"`
 	Summary string `json:"summary" gorm:"type:text"`
 
 	// 内容
-	Content  string `json:"content,omitempty" gorm:"type:longtext"`  // 原始内容
-	Rendered string `json:"rendered,omitempty" gorm:"type:longtext"` // 渲染后的HTML
+	Content  string `json:"content,omitempty" gorm:"type:longtext"`
+	Rendered string `json:"rendered,omitempty" gorm:"type:longtext"`
 
 	// 作者
 	UserID     uint   `json:"user_id" gorm:"index;not null"`
@@ -73,6 +73,12 @@ type Post struct {
 
 	// 可见性
 	Visibility Visibility `json:"visibility" gorm:"type:varchar(20);default:'public';index"`
+
+	// 问题相关字段
+	BestAnswerID *uint `json:"best_answer_id" gorm:"index;default:NULL"`
+	IsSolved     bool  `json:"is_solved" gorm:"default:false;index"`
+	AnswerCount  uint  `json:"answer_count" gorm:"default:0"`
+	FollowCount  uint  `json:"follow_count" gorm:"default:0"`
 
 	// 关联关系
 	StarredBy []*User   `json:"starred_by,omitempty" gorm:"many2many:user_star_posts;foreignKey:ID;joinForeignKey:PostID;joinReferences:UserID"`
@@ -199,6 +205,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&UserLikePost{},
 		&PostTag{},
 		&CommentLike{},
+		&Answer{},
 	}
 	// 批量创建表
 	for _, table := range tables {

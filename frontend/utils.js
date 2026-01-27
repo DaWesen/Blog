@@ -1,25 +1,47 @@
 /**
  * 工具函数模块 - 通用工具和辅助函数
+ * 修复版本：修复API调用和错误处理
  */
 
 // API调用函数
 async function apiCall(endpoint, method = 'GET', data = null, requiresAuth = false) {
+    if (!endpoint.startsWith('/')) {
+        endpoint = '/' + endpoint;
+    }
+    
     const url = `${CONFIG.API_BASE_URL}${endpoint}`;
+    console.log('API调用:', {
+        url,
+        method,
+        requiresAuth,
+        currentToken: STATE.currentToken ? '有token' : '无token'
+    });
+    
     const headers = {
         'Content-Type': 'application/json',
     };
     
     // 添加认证头
     if (requiresAuth) {
-        if (!STATE.currentToken) {
-            // 尝试从本地存储获取
-            const savedToken = localStorage.getItem(CONFIG.TOKEN_KEY);
-            if (!savedToken) {
-                throw new Error('用户未登录');
+        // 首先尝试使用 STATE.currentToken
+        let token = STATE.currentToken;
+        
+        // 如果 STATE.currentToken 为空，尝试从本地存储获取
+        if (!token) {
+            token = localStorage.getItem(CONFIG.TOKEN_KEY);
+            console.log('从localStorage获取token:', token ? '有token' : '无token');
+            if (token) {
+                STATE.currentToken = token; // 更新到STATE
             }
-            STATE.currentToken = savedToken;
         }
-        headers['Authorization'] = `Bearer ${STATE.currentToken}`;
+        
+        if (!token) {
+            console.error('未找到token，用户未登录');
+            throw new Error('用户未登录');
+        }
+        
+        console.log('使用的token:', token.substring(0, 20) + '...'); // 只显示前20个字符
+        headers['Authorization'] = `Bearer ${token}`;
     }
     
     const options = {
@@ -34,47 +56,21 @@ async function apiCall(endpoint, method = 'GET', data = null, requiresAuth = fal
     try {
         const response = await fetch(url, options);
         
-        // 记录API调用（开发环境）
-        if (window.location.hostname === 'localhost') {
-            console.log(`[API] ${method} ${endpoint}`, {
-                status: response.status,
-                statusText: response.statusText
-            });
-        }
-        
         // 处理204 No Content（删除、点赞等操作通常返回204）
         if (response.status === 204) {
-            console.log(`[API] ${method} ${endpoint}: 操作成功 (204 No Content)`);
             return { success: true, message: '操作成功' };
         }
         
-        // 处理空响应
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            // 不是JSON响应
-            if (response.ok) {
-                console.log(`[API] ${method} ${endpoint}: 操作成功 (非JSON响应)`);
-                return { success: true, message: '操作成功' };
-            } else {
-                throw new Error(`请求失败: ${response.status} ${response.statusText}`);
-            }
-        }
+        // 处理其他响应
+        const responseText = await response.text();
         
-        // 解析JSON响应
+        // 尝试解析JSON
         let responseData;
         try {
-            responseData = await response.json();
+            responseData = responseText ? JSON.parse(responseText) : {};
         } catch (parseError) {
-            console.warn(`[API] ${method} ${endpoint}: JSON解析失败，但状态码为${response.status}`);
-            if (response.ok) {
-                return { success: true };
-            }
-            throw new Error('服务器响应格式错误');
-        }
-        
-        // 记录完整响应数据
-        if (window.location.hostname === 'localhost') {
-            console.log(`[API] ${method} ${endpoint} response:`, responseData);
+            // 如果不是JSON，返回原始文本
+            responseData = { message: responseText };
         }
         
         if (!response.ok) {
@@ -88,12 +84,11 @@ async function apiCall(endpoint, method = 'GET', data = null, requiresAuth = fal
                 updateNavigation();
                 
                 if (STATE.currentPage !== 'login') {
-                    showMessage('globalMessage', '登录已过期，请重新登录', 'warning');
+                    showGlobalMessage('登录已过期，请重新登录', 'warning');
                     setTimeout(() => showLogin(), 1000);
                 }
             }
             
-            // 从响应数据中提取错误信息
             const errorMessage = responseData.error || 
                                responseData.msg || 
                                responseData.message || 
@@ -107,7 +102,7 @@ async function apiCall(endpoint, method = 'GET', data = null, requiresAuth = fal
         return responseData;
         
     } catch (error) {
-        console.error(`[API Error] ${method} ${endpoint}:`, error);
+        console.error(`API调用失败 ${method} ${endpoint}:`, error);
         
         // 检查是否是网络错误
         if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
@@ -117,46 +112,52 @@ async function apiCall(endpoint, method = 'GET', data = null, requiresAuth = fal
         throw error;
     }
 }
+
 // 格式化日期
 function formatDate(dateString) {
     if (!dateString) return '';
     
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now - date;
-    
-    // 小于1分钟
-    if (diff < 60000) {
-        return '刚刚';
+    try {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diff = now - date;
+        
+        // 小于1分钟
+        if (diff < 60000) {
+            return '刚刚';
+        }
+        
+        // 小于1小时
+        if (diff < 3600000) {
+            return `${Math.floor(diff / 60000)}分钟前`;
+        }
+        
+        // 小于1天
+        if (diff < 86400000) {
+            return `${Math.floor(diff / 3600000)}小时前`;
+        }
+        
+        // 小于7天
+        if (diff < 604800000) {
+            return `${Math.floor(diff / 86400000)}天前`;
+        }
+        
+        // 显示完整日期
+        return date.toLocaleDateString('zh-CN', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (error) {
+        return dateString;
     }
-    
-    // 小于1小时
-    if (diff < 3600000) {
-        return `${Math.floor(diff / 60000)}分钟前`;
-    }
-    
-    // 小于1天
-    if (diff < 86400000) {
-        return `${Math.floor(diff / 3600000)}小时前`;
-    }
-    
-    // 小于7天
-    if (diff < 604800000) {
-        return `${Math.floor(diff / 86400000)}天前`;
-    }
-    
-    // 显示完整日期
-    return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
 }
 
 // HTML转义
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -196,9 +197,10 @@ function generateId() {
 // 复制文本到剪贴板
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
-        showMessage('globalMessage', '已复制到剪贴板', 'success');
+        showGlobalMessage('已复制到剪贴板', 'success');
     }).catch(err => {
         console.error('复制失败:', err);
+        showGlobalMessage('复制失败', 'danger');
     });
 }
 
@@ -292,63 +294,17 @@ function showGlobalMessage(message, type = 'info', duration = 5000) {
     if (duration > 0) {
         setTimeout(() => {
             if (messageDiv.parentNode) {
-                const bsAlert = bootstrap.Alert.getOrCreateInstance(messageDiv);
-                bsAlert.close();
+                try {
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(messageDiv);
+                    bsAlert.close();
+                } catch (error) {
+                    messageDiv.remove();
+                }
             }
         }, duration);
     }
 }
 
-// 显示消息的简写函数
-function showMessage(elementId, message, type = 'info') {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.innerHTML = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
-        
-        // 5秒后自动消失
-        setTimeout(() => {
-            const alert = element.querySelector('.alert');
-            if (alert) {
-                try {
-                    const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
-                    bsAlert.close();
-                } catch (error) {
-                    element.innerHTML = '';
-                }
-            }
-        }, 5000);
-    }
-}
-
-// 在HTML中增加全局消息容器
-document.addEventListener('DOMContentLoaded', function() {
-    if (!document.getElementById('global-message-container')) {
-        const container = document.createElement('div');
-        container.id = 'global-message-container';
-        container.style.cssText = 'position: fixed; top: 80px; right: 20px; z-index: 9999;';
-        document.body.appendChild(container);
-    }
-});
-
-// Marked.js 配置
-if (typeof marked !== 'undefined') {
-    marked.setOptions({
-        breaks: true,
-        gfm: true,
-        highlight: function(code, lang) {
-            if (window.hljs) {
-                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                return hljs.highlight(code, { language }).value;
-            }
-            return code;
-        }
-    });
-}
 // 检查元素是否存在
 function elementExists(id) {
     return document.getElementById(id) !== null;
@@ -373,7 +329,43 @@ function safeSetValue(id, value) {
     }
 }
 
+// 获取分类
+async function getCategories() {
+    try {
+        const response = await apiCall('/categories/all');
+        return Array.isArray(response) ? response : [];
+    } catch (error) {
+        console.error('获取分类失败:', error);
+        return [];
+    }
+}
+
+// 获取单个分类
+async function getCategory(categoryId) {
+    try {
+        return await apiCall(`/categories/${categoryId}`);
+    } catch (error) {
+        console.error('获取分类失败:', error);
+        throw error;
+    }
+}
+
+// 获取文章
+async function getPost(postId) {
+    try {
+        return await apiCall(`/posts/${postId}`);
+    } catch (error) {
+        console.error('获取文章失败:', error);
+        throw error;
+    }
+}
+
 // 在控制台暴露辅助函数
 window.elementExists = elementExists;
 window.safeSetText = safeSetText;
 window.safeSetValue = safeSetValue;
+window.apiCall = apiCall;
+window.formatDate = formatDate;
+window.escapeHtml = escapeHtml;
+window.truncateText = truncateText;
+window.showGlobalMessage = showGlobalMessage;

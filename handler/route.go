@@ -4,8 +4,11 @@ import (
 	"net/http"
 	"time"
 
+	answerservice "blog/service/AnswerService"
 	categoryservice "blog/service/CategoryService"
 	commentservice "blog/service/CommentService"
+	feedservice "blog/service/FeedService"
+	followservice "blog/service/FollowService"
 	postservice "blog/service/PostService"
 	userservice "blog/service/UserService"
 	"blog/utils"
@@ -19,6 +22,9 @@ func SetupRouter(
 	postService postservice.PostService,
 	categoryService categoryservice.CategoryService,
 	commentService commentservice.CommentService,
+	answerService answerservice.AnswerService,
+	followService followservice.FollowService,
+	feedService feedservice.FeedService,
 	lockManager *utils.LockManager,
 	rateLimiter *utils.RateLimiter,
 ) *gin.Engine {
@@ -39,12 +45,15 @@ func SetupRouter(
 				"注册":   "POST /api/register",
 				"登录":   "POST /api/login",
 				"文章列表": "GET /api/posts",
+				"关注功能": "POST /api/follow/user/:user_id",
+				"动态流":  "GET /api/feed/user/me",
+				"热门文章": "GET /api/feed/hot",
 			},
 		})
 	})
 
 	router.GET("/favicon.ico", func(c *gin.Context) {
-		c.Status(204) // No Content
+		c.Status(204)
 	})
 
 	// 健康检查接口
@@ -68,8 +77,11 @@ func SetupRouter(
 	postHandler := NewPostHandler(postService)
 	categoryHandler := NewCategoryHandler(categoryService)
 	commentHandler := NewCommentHandler(commentService)
+	answerHandler := NewAnswerHandler(answerService)
+	followHandler := NewFollowHandler(followService)
+	feedHandler := NewFeedHandler(feedService)
+	searchHandler := NewSearchHandler(postService, userService)
 
-	// 公共路由（无需认证）
 	public := router.Group("/api")
 	{
 		// 用户相关路由
@@ -83,14 +95,6 @@ func SetupRouter(
 
 			// 头像获取接口
 			userGroup.GET("/users/:username/avatar", userHandler.GetAvatar)
-
-			// 添加统计接口
-			userGroup.GET("/stats/users/count", func(c *gin.Context) {
-				c.JSON(200, gin.H{
-					"count":   0,
-					"message": "用户统计功能待实现",
-				})
-			})
 		}
 
 		// 文章相关路由
@@ -102,7 +106,7 @@ func SetupRouter(
 			postGroup.GET("/category/:category_id", postHandler.ListPostsByCategory)
 			postGroup.GET("/tag/:tag_id", postHandler.ListPostsByTag)
 
-			// 文章详情路由组 - 使用子路由
+			// 文章详情路由组
 			postDetailGroup := postGroup.Group("/:id")
 			{
 				postDetailGroup.GET("", postHandler.GetPost)
@@ -136,16 +140,39 @@ func SetupRouter(
 		{
 			commentGroup.GET("/:id", commentHandler.GetComment)
 
-			// 评论详情路由组 - 使用子路由
+			// 评论详情路由组
 			commentDetailGroup := commentGroup.Group("/:id")
 			{
 				commentDetailGroup.GET("/likes", commentHandler.GetCommentLikes)
 				commentDetailGroup.GET("/replies", commentHandler.ListReplies)
 			}
 		}
-	}
 
-	// 需要认证的路由
+		// 回答相关路由
+		answerGroup := public.Group("/answers")
+		{
+			answerGroup.GET("/:id", answerHandler.GetAnswer)
+			answerGroup.GET("/question/:question_id", answerHandler.ListAnswersByQuestion)
+			answerGroup.GET("/user/:user_id", answerHandler.ListAnswersByUser)
+		}
+
+		// 关注相关路由
+		followGroup := public.Group("/follow")
+		{
+			followGroup.GET("/user/:user_id/following", followHandler.GetFollowingList)
+			followGroup.GET("/user/:user_id/followers", followHandler.GetFollowerList)
+			followGroup.GET("/user/:user_id/stats", followHandler.GetFollowStats)
+		}
+
+		// 高级搜索路由
+		searchGroup := public.Group("/search")
+		{
+			searchGroup.GET("/posts", searchHandler.AdvancedSearch)
+			searchGroup.GET("/users", searchHandler.SearchUsers)
+		}
+
+		public.GET("/feed/hot", feedHandler.GetHotFeed)
+	}
 	auth := router.Group("/api")
 	auth.Use(utils.JWTAuthMiddleware())
 	{
@@ -154,8 +181,8 @@ func SetupRouter(
 		{
 			userAuthGroup.GET("/profile", userHandler.GetProfile)
 			userAuthGroup.PUT("/profile", userHandler.UpdateProfile)
-			userAuthGroup.POST("/avatar", userHandler.UploadAvatar)   // 上传头像
-			userAuthGroup.DELETE("/avatar", userHandler.DeleteAvatar) // 删除头像
+			userAuthGroup.POST("/avatar", userHandler.UploadAvatar)
+			userAuthGroup.DELETE("/avatar", userHandler.DeleteAvatar)
 		}
 
 		// 文章相关
@@ -201,6 +228,28 @@ func SetupRouter(
 				commentDetailAuthGroup.GET("/is-liked", commentHandler.IsCommentLiked)
 			}
 		}
+
+		// 回答相关
+		answerAuthGroup := auth.Group("/answers")
+		{
+			answerAuthGroup.POST("", answerHandler.CreateAnswer)
+
+			answerDetailAuthGroup := answerAuthGroup.Group("/:id")
+			{
+				answerDetailAuthGroup.PUT("", answerHandler.UpdateAnswer)
+				answerDetailAuthGroup.DELETE("", answerHandler.DeleteAnswer)
+				answerDetailAuthGroup.POST("/accept", answerHandler.AcceptAnswer)
+			}
+		}
+
+		// 关注相关
+		followAuthGroup := auth.Group("/follow")
+		{
+			followAuthGroup.POST("/user/:user_id", followHandler.FollowUser)
+			followAuthGroup.DELETE("/user/:user_id", followHandler.UnfollowUser)
+			followAuthGroup.GET("/user/:user_id/is-following", followHandler.IsFollowing)
+		}
+		auth.GET("/feed/user/:user_id", feedHandler.GetUserFeed)
 	}
 
 	return router

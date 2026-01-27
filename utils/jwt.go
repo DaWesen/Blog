@@ -12,7 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-var jwtSecret = []byte("misono mika")
+var jwtSecret = []byte("misonomika")
 
 // Claims 自定义 JWT 声明
 type Claims struct {
@@ -25,7 +25,7 @@ type Claims struct {
 // GenerateToken 生成 JWT Token
 func GenerateToken(userID uint, username, role string) (string, error) {
 	nowTime := time.Now()
-	expireTime := nowTime.Add(24 * time.Hour) // Token 24小时有效
+	expireTime := nowTime.Add(7 * 24 * time.Hour) // Token 24小时有效
 
 	claims := Claims{
 		UserID:   userID,
@@ -63,12 +63,16 @@ func ParseToken(tokenString string) (*Claims, error) {
 	return nil, errors.New("invalid token")
 }
 
-// JWTAuthMiddleware JWT 认证中间件
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 打印请求信息
+		fmt.Printf("请求路径: %s\n", c.Request.URL.Path)
+		fmt.Printf("Authorization头: %s\n", c.GetHeader("Authorization"))
+
 		// 从请求头获取 token
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			fmt.Println("错误: 没有Authorization头")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code": 401,
 				"msg":  "请求未携带 token",
@@ -80,6 +84,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		// 检查 token 格式
 		parts := strings.SplitN(authHeader, " ", 2)
 		if !(len(parts) == 2 && parts[0] == "Bearer") {
+			fmt.Printf("错误: token格式不对，parts: %v\n", parts)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code": 401,
 				"msg":  "token 格式错误",
@@ -88,9 +93,13 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		tokenString := parts[1]
+		fmt.Printf("Token字符串长度: %d\n", len(tokenString))
+
 		// 解析 token
-		claims, err := ParseToken(parts[1])
+		claims, err := ParseToken(tokenString)
 		if err != nil {
+			fmt.Printf("解析token错误: %v\n", err)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code": 401,
 				"msg":  "无效的 token",
@@ -99,8 +108,13 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// 打印token信息
+		fmt.Printf("Token信息: UserID=%d, Username=%s, ExpiresAt=%v\n",
+			claims.UserID, claims.Username, claims.ExpiresAt)
+
 		// 检查 token 是否过期
 		if time.Now().Unix() > claims.ExpiresAt.Unix() {
+			fmt.Println("错误: token已过期")
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code": 401,
 				"msg":  "token 已过期",
@@ -114,6 +128,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		c.Set("username", claims.Username)
 		c.Set("role", claims.Role)
 
+		fmt.Println("Token验证通过")
 		c.Next()
 	}
 }

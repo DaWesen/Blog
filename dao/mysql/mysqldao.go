@@ -15,6 +15,7 @@ type UserSQL interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	UpdateUser(ctx context.Context, id uint, updates map[string]any) error
 	DeleteUser(ctx context.Context, id uint) error
+	SearchUsers(ctx context.Context, keyword string, page, size int) ([]*model.User, int64, error)
 }
 
 // 评论
@@ -128,6 +129,42 @@ func (d *userSQL) UpdateUser(ctx context.Context, id uint, updates map[string]an
 
 func (d *userSQL) DeleteUser(ctx context.Context, id uint) error {
 	return d.db.WithContext(ctx).Delete(&model.User{}, id).Error
+}
+
+// SearchUsers 搜索用户
+func (d *userSQL) SearchUsers(ctx context.Context, keyword string, page, size int) ([]*model.User, int64, error) {
+	var users []*model.User
+	var total int64
+
+	offset := (page - 1) * size
+
+	// 构建查询条件
+	query := d.db.WithContext(ctx).Model(&model.User{})
+
+	// 添加搜索条件（按用户名或邮箱搜索）
+	if keyword != "" {
+		likeKeyword := "%" + keyword + "%"
+		query = query.Where("name LIKE ? OR email LIKE ?", likeKeyword, likeKeyword)
+	}
+
+	// 只返回活跃用户
+	query = query.Where("status = ?", model.UserStatusActive)
+
+	// 获取总数
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 获取分页数据
+	if err := query.
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(size).
+		Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
 }
 
 // 评论

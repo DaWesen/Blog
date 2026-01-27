@@ -7,13 +7,16 @@ import (
 	"blog/handler"
 	mysqlpkg "blog/pkg/mysql"
 	redispkg "blog/pkg/redis"
+	answerservice "blog/service/AnswerService"
 	CategoryService "blog/service/CategoryService"
 	CommentService "blog/service/CommentService"
+	feedservice "blog/service/FeedService"
+	followservice "blog/service/FollowService"
 	PostService "blog/service/PostService"
 	UserService "blog/service/UserService"
 	"blog/utils"
+	"fmt"
 	"log"
-	"os"
 )
 
 func main() {
@@ -44,7 +47,9 @@ func main() {
 	tagSQL := mysqldao.NewTagSQL(db.DB)
 	likeSQL := mysqldao.NewLikeSQL(db.DB)
 	starSQL := mysqldao.NewStarSQL(db.DB)
+	answerSQL := mysqldao.NewAnswerSQL(db.DB)
 	commentLikeSQL := mysqldao.NewCommentLikeSQL(db.DB)
+	followSQL := mysqldao.NewFollowSQL(db.DB)
 
 	// 6. 初始化Redis Cache
 	redisCache := redisdao.NewRedisCache(redisClient.Client)
@@ -52,6 +57,30 @@ func main() {
 	// 7. 初始化Service
 	userService := UserService.NewUserService(userSQL, lockManager, rateLimiter)
 	categoryService := CategoryService.NewCategoryService(categorySQL, lockManager, rateLimiter)
+
+	// 创建AnswerService
+	answerService := answerservice.NewAnswerService(
+		answerSQL,
+		postSQL,
+		userSQL,
+		db.DB,
+		lockManager,
+		rateLimiter,
+	)
+
+	// 创建FollowService
+	followService := followservice.NewFollowService(
+		followSQL,
+		userSQL,
+		db.DB,
+	)
+
+	// 创建FeedService
+	feedService := feedservice.NewFeedService(
+		db.DB,
+		followSQL,
+		postSQL,
+	)
 
 	commentService := CommentService.NewCommentService(
 		commentSQL,
@@ -88,57 +117,21 @@ func main() {
 		postService,
 		categoryService,
 		commentService,
+		answerService,
+		followService,
+		feedService,
 		lockManager,
 		rateLimiter,
 	)
 
-	// 9. 添加静态文件服务
-	// 如果存在frontend文件夹，则提供静态文件服务
+	// 添加静态文件服务
+	router.Static("/uploads", "./uploads")
 	router.Static("/frontend", "./frontend")
 
-	// 添加头像上传目录的静态文件服务
-	router.Static("/uploads", "./uploads")
-
-	// 创建上传目录（如果不存在）
-	createUploadDirs()
-
 	// 10. 启动服务器
-	router.Run(":8080")
-}
-
-// 创建上传目录
-func createUploadDirs() {
-	// 创建头像上传目录
-	dirs := []string{
-		"./uploads",
-		"./uploads/avatars",
+	log.Printf("服务器启动在端口 %d", cfg.Server.Port)
+	log.Printf("前端地址: http://localhost:%d/frontend", cfg.Server.Port)
+	if err := router.Run(fmt.Sprintf(":%d", cfg.Server.Port)); err != nil {
+		log.Fatal("服务器启动失败:", err)
 	}
-
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
-			log.Printf("创建目录失败: %s, error: %v", dir, err)
-		}
-	}
-
-	// 创建默认头像文件（如果不存在）
-	defaultAvatarPath := "./uploads/default-avatar.png"
-	if _, err := os.Stat(defaultAvatarPath); os.IsNotExist(err) {
-		createDefaultAvatar(defaultAvatarPath)
-	}
-}
-
-// 创建默认头像
-func createDefaultAvatar(path string) {
-	// 这里可以生成一个简单的默认头像
-	// 为了简单起见，我们创建一个空的PNG文件占位
-	file, err := os.Create(path)
-	if err != nil {
-		log.Printf("创建默认头像失败: %v", err)
-		return
-	}
-	defer file.Close()
-
-	// 可以在这里添加生成默认头像的逻辑
-	// 现在只是创建一个空文件
-	log.Printf("默认头像已创建: %s", path)
 }

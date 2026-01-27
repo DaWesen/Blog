@@ -16,4 +16,4 @@ redis:
   db: 0
 
 jwt:
-  secret: "misono mika"
+  secret: "misonomika"
